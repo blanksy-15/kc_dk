@@ -7,7 +7,16 @@ from .dk_import import (
     percentile_from_rank,
     weekly_standings,
 )
+from .analytics import (
+    consecutive_player_use,
+    group_player_usage,
+    member_player_usage,
+    season_leaderboard,
+    unanimous_weekly_selections,
+    unique_weekly_selections,
+)
 from .members import load_members
+from .persistence import connect_database, import_week, weekly_results
 
 __all__ = [
     "REQUIRED_FIELDS",
@@ -16,4 +25,13 @@ __all__ = [
     "match_kcdk_members",
     "percentile_from_rank",
     "weekly_standings",
+    "connect_database",
+    "import_week",
+    "weekly_results",
+    "season_leaderboard",
+    "member_player_usage",
+    "group_player_usage",
+    "consecutive_player_use",
+    "unanimous_weekly_selections",
+    "unique_weekly_selections",
 ]

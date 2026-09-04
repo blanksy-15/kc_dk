@@ -6,7 +6,7 @@ from typing import Iterable
 
 import pandas as pd
 
-REQUIRED_FIELDS = ("rank", "entry_id", "entry_name", "points", "lineup")
+REQUIRED_FIELDS = ("rank", "entry_id", "entry_name", "points")
 _FIELD_ALIASES = {
     "rank": {"rank", "place", "contest_rank"},
     "entry_id": {"entryid", "entry_id", "entry_number", "entrynumber"},
@@ -65,6 +65,16 @@ def normalize_contest(data: pd.DataFrame) -> pd.DataFrame:
     return normalized
 
 
+def contest_result_rows(contest: pd.DataFrame) -> pd.DataFrame:
+    """Return one standings row per DraftKings entry.
+
+    Some DraftKings exports repeat entrant values alongside a player ownership
+    table.  Keeping this collapse separate lets lineup parsing evolve without
+    changing the season persistence model.
+    """
+    return contest.drop_duplicates(subset=["entry_id"], keep="first").copy()
+
+
 def import_contest(path: Path) -> pd.DataFrame:
     """Read and normalize one DraftKings contest CSV."""
     return normalize_contest(pd.read_csv(path))
@@ -87,7 +97,10 @@ def match_kcdk_members(contest: pd.DataFrame, members: pd.DataFrame) -> pd.DataF
     lookup = active_members.assign(
         _match_name=active_members["draftkings_name"].str.strip().str.casefold()
     )
-    matched = contest.assign(_match_name=contest["entry_name"].astype("string").str.strip().str.casefold())
+    results = contest_result_rows(contest)
+    matched = results.assign(
+        _match_name=results["entry_name"].astype("string").str.strip().str.casefold()
+    )
     return matched.merge(
         lookup[["_match_name", "display_name", "nickname", "notes"]],
         on="_match_name",
@@ -98,7 +111,7 @@ def match_kcdk_members(contest: pd.DataFrame, members: pd.DataFrame) -> pd.DataF
 def weekly_standings(contest: pd.DataFrame, members: pd.DataFrame) -> pd.DataFrame:
     """Build KCDK-only weekly standings from contest rank and fantasy points."""
     matched = match_kcdk_members(contest, members).copy()
-    total_entries = len(contest)
+    total_entries = len(contest_result_rows(contest))
     matched["overall_percentile"] = matched["rank"].map(
         lambda rank: percentile_from_rank(rank, total_entries)
     )

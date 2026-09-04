@@ -6,3 +6,4 @@ from .models import ProjectPaths
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PATHS = ProjectPaths.from_root(PROJECT_ROOT)
+DATABASE_PATH = PATHS.processed_data / "kcdk.sqlite"

@@ -24,7 +24,7 @@ def test_header_normalization_and_mock_import():
 
 
 def test_missing_required_columns_reports_found_headers():
-    with pytest.raises(ValueError, match="entry_id.*lineup") as error:
+    with pytest.raises(ValueError, match="entry_id") as error:
         normalize_contest(pd.DataFrame({"Rank": [1], "Points": [10]}))
     assert "Headers found" in str(error.value)
 
@@ -51,7 +51,7 @@ def test_numeric_parsing_handles_commas_blanks_and_percentages():
 
 def test_matching_active_members_only():
     contest = import_contest(ROOT / "data" / "mock" / "contest.csv")
-    members = load_members(ROOT / "data" / "members.csv")
+    members = load_members(ROOT / "data" / "mock" / "members.csv")
     matched = match_kcdk_members(contest, members)
     assert matched["display_name"].tolist() == [
         "Casey North",

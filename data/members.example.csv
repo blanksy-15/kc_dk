@@ -1,4 +1,4 @@
-draftkings_name,display_name,nickname,active,notes
-OrbitBuilder,Example Member One,Orbit,true,Fictional sample member
-SlatePilot,Example Member Two,Slate,true,Fictional sample member
-InactiveSample,Example Inactive,,false,Disabled fictional sample
+member_key,draftkings_name,display_name,nickname,active,notes
+example-one,OrbitBuilder,Example Member One,Orbit,true,Fictional sample member
+example-two,SlatePilot,Example Member Two,Slate,true,Fictional sample member
+example-inactive,InactiveSample,Example Inactive,,false,Disabled fictional sample
