@@ -157,16 +157,22 @@ from analytics; the drawing layer does not invent them.
 
 The authored `assets/branding/kcdk_logo.png` is used by default and contained
 within the configured logo region without stretching. Its RGBA channel is
-preserved. Other optional authored assets can be placed in `assets/branding/`:
+preserved. The matching `assets/branding/leaderboard_header.png` is scaled
+without distortion, right-anchored, and cropped to the header behind the
+logo/title/subtitle. Scale, X/Y offset, opacity, and anchoring are centralized
+in `LeaderboardVisualConfig`. A replacement RGBA file will preserve its alpha
+automatically; the current RGB artwork is rendered exactly as supplied.
+Another optional authored asset can be placed in `assets/branding/`:
 
 - `leaderboard_background.png`
-- `skyline.png`
 
-Their aspect ratios are preserved through contain/crop operations. Missing
-assets are not errors: the renderer supplies a KCDK mark, restrained skyline,
-and deterministic broadcast-style texture. Fonts are configurable through
-`LeaderboardVisualConfig`; without a project font it searches sensible system
-fonts and reports the selected fallback.
+Aspect ratios are preserved through contain/crop operations. Missing or
+unreadable header artwork is not an error: the renderer falls back to its
+restrained procedural skyline instead, but never draws that skyline underneath
+successfully loaded header artwork. It also supplies a KCDK mark and
+deterministic broadcast-style texture when needed. Fonts are configurable
+through `LeaderboardVisualConfig`; without a project font it searches sensible
+system fonts and reports the selected fallback.
 
 Generate both 15-row review images from the real mock-season analytics plus
 preview-only synthetic presentation rows:

@@ -77,6 +77,11 @@ class LeaderboardVisualConfig:
     logo_left: int = 58
     logo_top: int = 68
     skyline_opacity: int = 34
+    header_artwork_scale: float = 0.72
+    header_artwork_x_offset: int = 0
+    header_artwork_y_offset: int = -15
+    header_artwork_opacity: float = 0.48
+    header_artwork_right_anchor: bool = True
     background_art_opacity: float = 0.28
     cell_padding: int = 12
     player_text_padding: int = 16
@@ -108,6 +113,10 @@ class LeaderboardVisualConfig:
             raise ValueError("Row height is too small for the configured row font.")
         if not 0 <= self.skyline_opacity <= 255:
             raise ValueError("Skyline opacity must be between 0 and 255.")
+        if self.header_artwork_scale <= 0:
+            raise ValueError("Header artwork scale must be greater than zero.")
+        if not 0 <= self.header_artwork_opacity <= 1:
+            raise ValueError("Header artwork opacity must be between zero and one.")
 
     def image_height(self, row_count: int) -> int:
         if row_count < 1 or row_count > 20:
@@ -126,6 +135,7 @@ class BrandingAssetPaths:
     root: Path = Path("assets/branding")
     logo_filename: str = "kcdk_logo.png"
     background_filename: str = "leaderboard_background.png"
+    header_filename: str = "leaderboard_header.png"
     skyline_filename: str = "skyline.png"
 
     @property
@@ -135,6 +145,10 @@ class BrandingAssetPaths:
     @property
     def background(self) -> Path:
         return self.root / self.background_filename
+
+    @property
+    def header(self) -> Path:
+        return self.root / self.header_filename
 
     @property
     def skyline(self) -> Path:
@@ -150,10 +164,23 @@ class RenderedLeaderboard:
     font_name: str
     loaded_assets: tuple[str, ...]
     logo_rendered_size: tuple[int, int]
+    header_artwork: HeaderArtworkPlacement | None
+    procedural_skyline_used: bool
     callout_count: int
     incomplete_prize_data: bool
     last_row_bottom: int
     footer_top: int
+
+
+@dataclass(frozen=True)
+class HeaderArtworkPlacement:
+    source_size: tuple[int, int]
+    scaled_size: tuple[int, int]
+    destination: tuple[int, int]
+    source_mode: str
+    has_alpha: bool
+    opacity: float
+    right_anchored: bool
 
 
 @dataclass(frozen=True)
@@ -332,6 +359,51 @@ def _draw_fallback_skyline(
     image.alpha_composite(overlay)
 
 
+def _composite_header_artwork(
+    image: Image.Image,
+    source: Image.Image,
+    config: LeaderboardVisualConfig,
+) -> HeaderArtworkPlacement:
+    """Scale, right-anchor, and crop authored artwork to the header region."""
+    source_size = source.size
+    source_mode = source.mode
+    has_alpha = "A" in source.getbands()
+    content_width = config.canvas_width - 2 * config.outer_margin
+    scaled_width = max(1, round(content_width * config.header_artwork_scale))
+    scaled_height = max(1, round(source.height * scaled_width / source.width))
+    artwork = source.convert("RGBA").resize(
+        (scaled_width, scaled_height), Image.Resampling.LANCZOS
+    )
+    alpha = artwork.getchannel("A").point(
+        lambda value: round(value * config.header_artwork_opacity)
+    )
+    artwork.putalpha(alpha)
+
+    local_x = (
+        content_width - scaled_width
+        if config.header_artwork_right_anchor
+        else 0
+    ) + config.header_artwork_x_offset
+    local_y = (
+        (config.header_height - scaled_height) // 2
+        + config.header_artwork_y_offset
+    )
+    header = Image.new(
+        "RGBA", (content_width, config.header_height), (0, 0, 0, 0)
+    )
+    header.alpha_composite(artwork, (local_x, local_y))
+    image.alpha_composite(header, (config.outer_margin, config.outer_margin))
+    return HeaderArtworkPlacement(
+        source_size=source_size,
+        scaled_size=artwork.size,
+        destination=(config.outer_margin + local_x, config.outer_margin + local_y),
+        source_mode=source_mode,
+        has_alpha=has_alpha,
+        opacity=config.header_artwork_opacity,
+        right_anchored=config.header_artwork_right_anchor,
+    )
+
+
 def _draw_fallback_logo(
     image: Image.Image,
     draw: ImageDraw.ImageDraw,
@@ -365,7 +437,12 @@ def _apply_branding(
     config: LeaderboardVisualConfig,
     assets: BrandingAssetPaths,
     fonts: _FontSet,
-) -> tuple[tuple[str, ...], tuple[int, int]]:
+) -> tuple[
+    tuple[str, ...],
+    tuple[int, int],
+    HeaderArtworkPlacement | None,
+    bool,
+]:
     loaded: list[str] = []
     if assets.background.is_file():
         with Image.open(assets.background) as source:
@@ -374,24 +451,21 @@ def _apply_branding(
         image.paste(Image.blend(base, art, config.background_art_opacity).convert("RGBA"))
         loaded.append(assets.background.name)
 
-    draw = ImageDraw.Draw(image)
-    if assets.skyline.is_file():
-        with Image.open(assets.skyline) as source:
-            skyline = source.convert("RGBA")
-            skyline.thumbnail((630, config.header_height - 18), Image.Resampling.LANCZOS)
-        alpha = skyline.getchannel("A").point(
-            lambda value: value * config.skyline_opacity // 255
-        )
-        skyline.putalpha(alpha)
-        image.alpha_composite(
-            skyline,
-            (config.canvas_width - config.outer_margin - skyline.width,
-             config.outer_margin + config.header_height - skyline.height),
-        )
-        loaded.append(assets.skyline.name)
+    header_artwork = None
+    procedural_skyline_used = False
+    if assets.header.is_file():
+        try:
+            with Image.open(assets.header) as source:
+                header_artwork = _composite_header_artwork(image, source, config)
+            loaded.append(assets.header.name)
+        except OSError:
+            _draw_fallback_skyline(image, config)
+            procedural_skyline_used = True
     else:
         _draw_fallback_skyline(image, config)
+        procedural_skyline_used = True
 
+    draw = ImageDraw.Draw(image)
     if assets.logo.is_file():
         with Image.open(assets.logo) as source:
             logo = source.convert("RGBA")
@@ -406,7 +480,7 @@ def _apply_branding(
         _draw_fallback_logo(image, draw, config, fonts)
         size = min(config.logo_max_height, 100)
         logo_size = (size, size)
-    return tuple(loaded), logo_size
+    return tuple(loaded), logo_size, header_artwork, procedural_skyline_used
 
 
 def _new_canvas(
@@ -414,7 +488,13 @@ def _new_canvas(
     config: LeaderboardVisualConfig,
     assets: BrandingAssetPaths,
     fonts: _FontSet,
-) -> tuple[Image.Image, tuple[str, ...], tuple[int, int]]:
+) -> tuple[
+    Image.Image,
+    tuple[str, ...],
+    tuple[int, int],
+    HeaderArtworkPlacement | None,
+    bool,
+]:
     image = Image.new("RGBA", (config.canvas_width, height), (*config.background_color, 255))
     draw = ImageDraw.Draw(image)
     draw.rectangle(
@@ -432,8 +512,10 @@ def _new_canvas(
         y = rng.randrange(height)
         shade = rng.choice((24, 31, 37, 43))
         draw.point((x, y), fill=(shade, shade, shade, rng.randrange(18, 42)))
-    loaded, logo_size = _apply_branding(image, config, assets, fonts)
-    return image, loaded, logo_size
+    loaded, logo_size, header_artwork, procedural_skyline_used = _apply_branding(
+        image, config, assets, fonts
+    )
+    return image, loaded, logo_size, header_artwork, procedural_skyline_used
 
 
 def _draw_header(
@@ -811,7 +893,13 @@ def _render(
     resolved_callouts = tuple(callouts)[:3]
     height = style.image_height(len(data))
     fonts = resolve_fonts(style)
-    image, loaded, logo_size = _new_canvas(height, style, asset_paths, fonts)
+    (
+        image,
+        loaded,
+        logo_size,
+        header_artwork,
+        procedural_skyline_used,
+    ) = _new_canvas(height, style, asset_paths, fonts)
     draw = ImageDraw.Draw(image)
     _draw_header(
         draw,
@@ -850,6 +938,8 @@ def _render(
         font_name=fonts.name,
         loaded_assets=loaded,
         logo_rendered_size=logo_size,
+        header_artwork=header_artwork,
+        procedural_skyline_used=procedural_skyline_used,
         callout_count=len(resolved_callouts),
         incomplete_prize_data=incomplete,
         last_row_bottom=last_row_bottom,
@@ -915,6 +1005,7 @@ def render_tournament_performance_png(
 
 __all__ = [
     "BrandingAssetPaths",
+    "HeaderArtworkPlacement",
     "KCDK_COLUMN_HEADERS",
     "LeaderboardCallout",
     "LeaderboardVisualConfig",

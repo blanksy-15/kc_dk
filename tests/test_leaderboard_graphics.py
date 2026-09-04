@@ -20,6 +20,7 @@ from kcdk.leaderboard_graphics import (
     TOURNAMENT_COLUMN_HEADERS,
     LeaderboardCallout,
     LeaderboardVisualConfig,
+    _composite_header_artwork,
     build_kcdk_visual_rows,
     centered_text_x,
     format_currency,
@@ -336,6 +337,10 @@ def test_renderers_work_without_authored_assets_and_produce_valid_png(tmp_path):
     )
     assert first.loaded_assets == ()
     assert second.loaded_assets == ()
+    assert first.procedural_skyline_used
+    assert second.procedural_skyline_used
+    assert first.header_artwork is None
+    assert second.header_artwork is None
     assert not first.incomplete_prize_data
     assert second.incomplete_prize_data
     assert first.callout_count == 3
@@ -355,9 +360,9 @@ def test_renderer_loads_mock_branding_assets_without_stretching(tmp_path):
     Image.new("RGB", (400, 900), (30, 32, 34)).save(
         assets / "leaderboard_background.png"
     )
-    Image.new("RGBA", (900, 120), (55, 181, 111, 160)).save(
-        assets / "skyline.png"
-    )
+    header = Image.new("RGBA", (900, 360), (0, 0, 0, 0))
+    ImageDraw.Draw(header).rectangle((360, 80, 899, 300), fill=(55, 181, 111, 160))
+    header.save(assets / "leaderboard_header.png")
     kcdk, _, _, _ = build_preview_frames()
     result = render_kcdk_standings_png(
         kcdk,
@@ -370,15 +375,72 @@ def test_renderer_loads_mock_branding_assets_without_stretching(tmp_path):
     assert set(result.loaded_assets) == {
         "kcdk_logo.png",
         "leaderboard_background.png",
-        "skyline.png",
+        "leaderboard_header.png",
     }
     source_ratio = 300 / 100
     rendered_ratio = result.logo_rendered_size[0] / result.logo_rendered_size[1]
     assert abs(rendered_ratio - source_ratio) < 0.05
     assert result.logo_rendered_size == (126, 42)
     assert logo.getchannel("A").getextrema() == (0, 255)
+    assert not result.procedural_skyline_used
+    assert result.header_artwork is not None
+    assert result.header_artwork.has_alpha
+    source_header_ratio = 900 / 360
+    rendered_header_ratio = (
+        result.header_artwork.scaled_size[0]
+        / result.header_artwork.scaled_size[1]
+    )
+    assert abs(rendered_header_ratio - source_header_ratio) < 0.01
+    assert (
+        result.header_artwork.destination[0]
+        + result.header_artwork.scaled_size[0]
+        == LeaderboardVisualConfig().canvas_width
+        - LeaderboardVisualConfig().outer_margin
+    )
     with Image.open(result.path) as image:
         assert image.size == (1400, 1206)
+
+
+def test_header_artwork_preserves_transparent_pixels_when_composited():
+    style = LeaderboardVisualConfig(
+        canvas_width=200,
+        outer_margin=20,
+        header_height=80,
+        header_artwork_scale=1.0,
+        header_artwork_y_offset=0,
+        header_artwork_opacity=1.0,
+        kcdk_column_widths=(10, 10, 80, 10, 10, 10, 10, 20),
+        tournament_column_widths=(10, 10, 70, 10, 10, 10, 20, 20),
+    )
+    base = Image.new("RGBA", (200, 120), (12, 13, 14, 255))
+    source = Image.new("RGBA", (160, 80), (0, 0, 0, 0))
+    ImageDraw.Draw(source).rectangle((80, 0, 159, 79), fill=(243, 113, 33, 255))
+
+    placement = _composite_header_artwork(base, source, style)
+
+    assert placement.has_alpha
+    assert base.getpixel((40, 40)) == (12, 13, 14, 255)
+    assert base.getpixel((160, 40)) == (243, 113, 33, 255)
+
+
+def test_invalid_header_artwork_uses_procedural_fallback(tmp_path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "leaderboard_header.png").write_text("not a PNG", encoding="utf-8")
+    kcdk, _, _, _ = build_preview_frames()
+
+    result = render_kcdk_standings_png(
+        kcdk,
+        tmp_path / "fallback.png",
+        season_label="2026 SEASON",
+        week_label="Week 4",
+        weeks_completed=4,
+        assets=BrandingAssetPaths(assets),
+    )
+
+    assert result.header_artwork is None
+    assert result.procedural_skyline_used
+    assert "leaderboard_header.png" not in result.loaded_assets
 
 
 def test_authored_project_logo_loads_at_preserved_aspect_ratio(tmp_path):
@@ -396,6 +458,36 @@ def test_authored_project_logo_loads_at_preserved_aspect_ratio(tmp_path):
     source_ratio = 1545 / 1513
     rendered_ratio = result.logo_rendered_size[0] / result.logo_rendered_size[1]
     assert abs(rendered_ratio - source_ratio) < 0.01
+
+
+def test_authored_project_header_renders_on_both_leaderboards(tmp_path):
+    kcdk, tournament, kcdk_callouts, tournament_callouts = build_preview_frames()
+    project_assets = BrandingAssetPaths(ROOT / "assets" / "branding")
+    first = render_kcdk_standings_png(
+        kcdk,
+        tmp_path / "kcdk-header.png",
+        season_label="2026 SEASON",
+        week_label="Week 4",
+        weeks_completed=4,
+        callouts=kcdk_callouts,
+        assets=project_assets,
+    )
+    second = render_tournament_performance_png(
+        tournament,
+        tmp_path / "tournament-header.png",
+        season_label="2026 SEASON",
+        week_label="Week 4",
+        weeks_completed=4,
+        callouts=tournament_callouts,
+        assets=project_assets,
+    )
+
+    for result in (first, second):
+        assert "leaderboard_header.png" in result.loaded_assets
+        assert result.header_artwork is not None
+        assert result.header_artwork.source_size == (1942, 809)
+        assert not result.procedural_skyline_used
+        assert result.path.is_file()
 
 
 def test_missing_optional_footer_callout_renders_cleanly(tmp_path):
