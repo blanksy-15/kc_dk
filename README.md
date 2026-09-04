@@ -1,6 +1,6 @@
 # KCDK
 
-KCDK is a local Python project for importing weekly DraftKings contest exports, identifying private KCDK members, and building persistent season, tournament, and player-usage analysis. Leaderboard graphics, generated commentary, Discord posting, and OpenAI API calls are intentionally out of scope for the current phase.
+KCDK is a local Python project for importing weekly DraftKings contest exports, identifying private KCDK members, and building persistent season, tournament, and player-usage analysis. It can turn the deterministic weekly fact report into optional, structured OpenAI commentary. Leaderboard graphics and Discord posting remain out of scope.
 
 ## Two distinct leaderboards
 
@@ -34,11 +34,14 @@ These standings are not an alternate calculation of the internal KCDK leaderboar
 - `src/kcdk/persistence.py`: SQLite schema initialization and the high-level normalize, match, rank, parse, and atomic import workflow.
 - `src/kcdk/analytics.py`: official season leaderboard, member/group player usage, and factual selection-pattern helpers.
 - `src/kcdk/facts.py`: structured fact models, deterministic fact generators, transparent priority scoring, balanced selection, and weekly JSON-ready reports.
+- `src/kcdk/commentary.py`: compact fact-payload construction, OpenAI Responses API integration, structured-output validation, generation metadata, and Discord Markdown rendering/chunking.
+- `src/kcdk/commentary_prompt.py`: versioned prompt guardrails, tone profiles, and the strict output schema.
 - `src/kcdk/members.py`: editable active/inactive member configuration.
 - `src/kcdk/config.py` and `src/kcdk/models.py`: portable project paths.
 - `data/mock/`: version-controlled fictional members and contest fixtures.
 - `notebooks/season_analysis.ipynb`: end-to-end demonstration using a temporary database.
 - `notebooks/fact_engine.ipynb`: candidate facts, selected talking points, priorities/tags, completeness warnings, and the serialized payload for a fictional week.
+- `notebooks/commentary.ipynb`: latest mock fact report, a no-cost dry run, structured request JSON, and an explicitly opt-in live preview.
 
 SQLite uses normalized `seasons`, `members`, `season_members`, `contests`, `member_results`, `players`, and `lineup_players` tables. Integer primary keys link records internally. Prize amounts are nullable integer cents on `member_results`, avoiding floating-point money storage. The editable member CSV has a stable `member_key`; keep that key unchanged if a member changes their DraftKings or display name.
 
@@ -54,7 +57,10 @@ py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 Copy-Item data\members.example.csv data\members.csv
+Copy-Item .env.example .env
 ```
+
+Edit the ignored `.env` file and replace its placeholder with your local API key. Never commit `.env` or paste its value into notebooks, logs, screenshots, or issue reports. `OPENAI_MODEL` defaults to `gpt-5.4-mini` and can be overridden in `.env`.
 
 Run tests:
 
@@ -114,7 +120,47 @@ Priority weights live in `FACT_PRIORITY_BASES` and bonuses in `PRIORITY_BONUSES`
 
 Report warnings make incomplete prize, player-lineup, and ownership data explicit. Missing prize data never becomes a known $0 result. Player/money facts state historical co-occurrence only and do not claim that a selection caused an outcome.
 
-Current limitations: thresholds are provisional; lineup/ownership and prize aliases still need validation against a real DraftKings export; player identity currently depends on normalized names; and the first fact set intentionally favors transparent rules over statistical anomaly modeling. The next phase is OpenAI commentary generation constrained to the selected JSON facts. No OpenAI or Discord integration exists yet.
+Current limitations: thresholds are provisional; lineup/ownership and prize aliases still need validation against a real DraftKings export; player identity currently depends on normalized names; and the first fact set intentionally favors transparent rules over statistical anomaly modeling. OpenAI commentary requires a separately funded API account and is intentionally opt-in. Discord delivery does not exist yet.
+
+## OpenAI weekly commentary
+
+The commentary layer uses the official OpenAI Python SDK and the Responses API with a strict JSON Schema response. Python remains the source of truth: the model receives only the selected compact facts, fact IDs, completeness warnings, the chosen tone, and any explicitly supplied safe member context. It never receives a raw DraftKings CSV, database, candidate-fact set, API key, or unrelated local data.
+
+Three versioned tone profiles are available: `mild`, `normal` (default), and `ruthless`. Even the strongest tone is restricted to good-natured fantasy-sports performance. Prompt guardrails forbid invented statistics, unsupported history, sensitive personal inferences, predictions, and causal claims about player selections. Facts marked `partial` must remain qualified or be omitted. Each generated roast must cite one or more IDs from the supplied fact set, and the parser rejects unknown or missing IDs.
+
+Build and inspect the exact secret-free request without contacting OpenAI:
+
+```powershell
+python scripts\smoke_commentary.py
+```
+
+The dry-run JSON contains the complete instructions, compact input payload, model, output schema, prompt version, fact IDs, and character/UTF-8 byte sizes. To make exactly one deliberate request using the key in `.env`:
+
+```powershell
+python scripts\smoke_commentary.py --live --tone normal
+```
+
+Live results include the response ID/model and input, output, and total token usage when returned by the API. Errors expose only a safe exception class and optional HTTP status, never the exception message or key. The SDK client uses a 30-second timeout and at most two SDK-managed transient retries by default; authentication and configuration failures are not manually retried. `OPENAI_TIMEOUT_SECONDS` and `OPENAI_MAX_RETRIES` are optional local overrides.
+
+Application code can pass optional member context explicitly:
+
+```python
+from kcdk.commentary import MemberCommentaryContext, generate_weekly_commentary
+
+result = generate_weekly_commentary(
+    report,
+    tone="normal",
+    member_context={
+        "Casey North": MemberCommentaryContext(
+            display_name="Casey North",
+            nickname="North Star",
+            commentary_notes="Space puns are welcome.",
+        )
+    },
+)
+```
+
+Only context for members appearing in selected facts is sent. Commentary notes are whitespace-cleaned and length-limited; callers are responsible for supplying only non-sensitive, fantasy-relevant notes. `render_discord_markdown` formats validated output and neutralizes mass mentions. `chunk_discord_markdown` splits it below Discord's 2,000-character message limit. Neither function posts anything.
 
 ## Mock multi-week season
 
@@ -127,6 +173,6 @@ Before production use, validate the first real export's delimiter, encoding, hea
 ## Planned phases
 
 1. Validate and adapt parsing and fact thresholds against the first real DraftKings export.
-2. Add OpenAI-generated commentary constrained to selected Python-calculated facts.
+2. Validate OpenAI commentary tone and prompt behavior with league feedback.
 3. Build leaderboard graphics from the persisted facts.
 4. Add Discord integration.

@@ -26,6 +26,18 @@ from .facts import (
     generate_weekly_facts,
     select_facts,
 )
+from .commentary import (
+    COMMENTARY_PROMPT_VERSION,
+    DEFAULT_OPENAI_MODEL,
+    CommentaryConfig,
+    CommentaryGeneration,
+    MemberCommentaryContext,
+    StructuredCommentary,
+    build_commentary_request,
+    chunk_discord_markdown,
+    generate_weekly_commentary,
+    render_discord_markdown,
+)
 
 __all__ = [
     "REQUIRED_FIELDS",
@@ -50,4 +62,14 @@ __all__ = [
     "build_weekly_fact_report",
     "generate_weekly_facts",
     "select_facts",
+    "COMMENTARY_PROMPT_VERSION",
+    "DEFAULT_OPENAI_MODEL",
+    "CommentaryConfig",
+    "CommentaryGeneration",
+    "MemberCommentaryContext",
+    "StructuredCommentary",
+    "build_commentary_request",
+    "chunk_discord_markdown",
+    "generate_weekly_commentary",
+    "render_discord_markdown",
 ]
