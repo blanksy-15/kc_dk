@@ -26,6 +26,11 @@ TOURNAMENT_LEADERBOARD_TIEBREAKERS = (
     ("display_name", True),
 )
 
+MOVEMENT_UP = "up"
+MOVEMENT_DOWN = "down"
+MOVEMENT_SAME = "same"
+MOVEMENT_NEW = "new"
+
 
 def sort_leaderboard(leaderboard: pd.DataFrame) -> pd.DataFrame:
     """Apply the configurable official ordering and assign deterministic ranks."""
@@ -47,6 +52,175 @@ def sort_tournament_leaderboard(leaderboard: pd.DataFrame) -> pd.DataFrame:
     ).reset_index(drop=True)
     ranked.insert(0, "tournament_rank", range(1, len(ranked) + 1))
     return ranked
+
+
+def add_rank_movement(
+    current: pd.DataFrame,
+    previous: pd.DataFrame | None,
+    *,
+    rank_column: str,
+    member_column: str = "display_name",
+) -> pd.DataFrame:
+    """Annotate an already-ranked table with movement from one prior table.
+
+    ``movement_delta`` is current rank minus previous rank, so a negative value
+    means improvement. The renderer owns only presentation; it never
+    recalculates or changes leaderboard order.
+    """
+    required = {rank_column, member_column}
+    missing = required - set(current.columns)
+    if missing:
+        raise ValueError(f"Current leaderboard is missing columns: {sorted(missing)}")
+    if previous is not None:
+        missing = required - set(previous.columns)
+        if missing:
+            raise ValueError(
+                f"Previous leaderboard is missing columns: {sorted(missing)}"
+            )
+        if previous[member_column].duplicated().any():
+            raise ValueError("Previous leaderboard contains duplicate member names.")
+
+    prior_ranks = (
+        {}
+        if previous is None
+        else previous.set_index(member_column)[rank_column].to_dict()
+    )
+    deltas: list[object] = []
+    statuses: list[str] = []
+    previous_values: list[object] = []
+    for _, row in current.iterrows():
+        previous_rank = prior_ranks.get(row[member_column])
+        if previous_rank is None or pd.isna(previous_rank):
+            previous_values.append(pd.NA)
+            deltas.append(pd.NA)
+            statuses.append(MOVEMENT_NEW)
+            continue
+        current_rank = int(row[rank_column])
+        prior_rank = int(previous_rank)
+        delta = current_rank - prior_rank
+        previous_values.append(prior_rank)
+        deltas.append(delta)
+        statuses.append(
+            MOVEMENT_UP if delta < 0 else MOVEMENT_DOWN if delta > 0 else MOVEMENT_SAME
+        )
+
+    result = current.copy()
+    result["previous_rank"] = pd.array(previous_values, dtype="Int64")
+    result["movement_delta"] = pd.array(deltas, dtype="Int64")
+    result["movement_status"] = statuses
+    return result
+
+
+def _current_and_previous_contest_ids(
+    connection: sqlite3.Connection,
+    season_identifier: str,
+    through_contest_id: int | None,
+) -> tuple[int, int | None]:
+    contests = connection.execute(
+        """
+        SELECT c.id
+        FROM contests c JOIN seasons s ON s.id = c.season_id
+        WHERE s.identifier = ?
+        ORDER BY COALESCE(c.week_number, 2147483647), c.contest_date, c.id
+        """,
+        (season_identifier,),
+    ).fetchall()
+    contest_ids = [int(row[0]) for row in contests]
+    if not contest_ids:
+        raise ValueError(f"No contests exist for season {season_identifier}")
+    current_id = through_contest_id or contest_ids[-1]
+    if current_id not in contest_ids:
+        raise ValueError(
+            f"Contest {current_id} does not belong to season {season_identifier}"
+        )
+    current_index = contest_ids.index(current_id)
+    previous_id = contest_ids[current_index - 1] if current_index else None
+    return current_id, previous_id
+
+
+def _contest_member_names(
+    connection: sqlite3.Connection, contest_id: int
+) -> set[str]:
+    rows = connection.execute(
+        """
+        SELECT m.display_name
+        FROM member_results r JOIN members m ON m.id = r.member_id
+        WHERE r.contest_id = ?
+        """,
+        (contest_id,),
+    ).fetchall()
+    return {str(row[0]) for row in rows}
+
+
+def _mark_current_returnees_new(
+    connection: sqlite3.Connection,
+    movement: pd.DataFrame,
+    current_id: int,
+    previous_id: int | None,
+) -> pd.DataFrame:
+    if previous_id is None:
+        return movement
+    current_members = _contest_member_names(connection, current_id)
+    previous_members = _contest_member_names(connection, previous_id)
+    returning = current_members - previous_members
+    if not returning:
+        return movement
+    result = movement.copy()
+    mask = result["display_name"].isin(returning)
+    result.loc[mask, "previous_rank"] = pd.NA
+    result.loc[mask, "movement_delta"] = pd.NA
+    result.loc[mask, "movement_status"] = MOVEMENT_NEW
+    return result
+
+
+def season_leaderboard_with_movement(
+    connection: sqlite3.Connection,
+    season_identifier: str,
+    through_contest_id: int | None = None,
+) -> pd.DataFrame:
+    """Return official KCDK standings plus prior-contest rank movement."""
+    current_id, previous_id = _current_and_previous_contest_ids(
+        connection, season_identifier, through_contest_id
+    )
+    current = season_leaderboard(connection, season_identifier, current_id)
+    previous = (
+        season_leaderboard(connection, season_identifier, previous_id)
+        if previous_id is not None
+        else None
+    )
+    movement = add_rank_movement(
+        current, previous, rank_column="season_rank"
+    )
+    return _mark_current_returnees_new(
+        connection, movement, current_id, previous_id
+    )
+
+
+def tournament_leaderboard_with_movement(
+    connection: sqlite3.Connection,
+    season_identifier: str,
+    through_contest_id: int | None = None,
+) -> pd.DataFrame:
+    """Return official tournament standings plus independent rank movement."""
+    current_id, previous_id = _current_and_previous_contest_ids(
+        connection, season_identifier, through_contest_id
+    )
+    current = tournament_performance_leaderboard(
+        connection, season_identifier, current_id
+    )
+    previous = (
+        tournament_performance_leaderboard(
+            connection, season_identifier, previous_id
+        )
+        if previous_id is not None
+        else None
+    )
+    movement = add_rank_movement(
+        current, previous, rank_column="tournament_rank"
+    )
+    return _mark_current_returnees_new(
+        connection, movement, current_id, previous_id
+    )
 
 
 def _season_results(

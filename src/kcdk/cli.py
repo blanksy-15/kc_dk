@@ -9,6 +9,7 @@ import sys
 
 from .commentary import CommentaryError
 from .discord import DiscordError
+from .leaderboard_preview import preview_result_dict, render_leaderboard_previews
 from .persistence import connect_database
 from .publishing import DiscordStateStore, PublishingError, run_weekly_workflow
 from .weekly_runner import WeeklyRunnerError, run_interactive_weekly
@@ -83,6 +84,20 @@ def _weekly_runner_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(handler=_run_weekly_runner)
 
 
+def _leaderboard_preview_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "leaderboard-preview",
+        help="Render both branded leaderboard PNGs from mock presentation data.",
+    )
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("output/preview")
+    )
+    parser.add_argument(
+        "--assets", type=Path, default=Path("assets/branding")
+    )
+    parser.set_defaults(handler=_run_leaderboard_preview)
+
+
 def _run_weekly(arguments: argparse.Namespace) -> int:
     connection = connect_database(arguments.database)
     try:
@@ -120,11 +135,26 @@ def _run_weekly_runner(arguments: argparse.Namespace) -> int:
     return 1 if result.status == "blocked" else 0
 
 
+def _run_leaderboard_preview(arguments: argparse.Namespace) -> int:
+    results = render_leaderboard_previews(
+        arguments.output_dir, asset_directory=arguments.assets
+    )
+    print(
+        json.dumps(
+            [preview_result_dict(result) for result in results],
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m kcdk")
     subparsers = parser.add_subparsers(dest="command", required=True)
     _weekly_parser(subparsers)
     _weekly_runner_parser(subparsers)
+    _leaderboard_preview_parser(subparsers)
     return parser
 
 

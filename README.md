@@ -1,6 +1,6 @@
 # KCDK
 
-KCDK is a local Python project for importing weekly DraftKings contest exports, identifying private KCDK members, and building persistent season, tournament, and player-usage analysis. It can turn the deterministic weekly fact report into optional, structured OpenAI commentary and publish a mobile-friendly weekly recap plus persistent standings through Discord incoming webhooks. Graphical leaderboard images remain out of scope.
+KCDK is a local Python project for importing weekly DraftKings contest exports, identifying private KCDK members, and building persistent season, tournament, and player-usage analysis. It can turn the deterministic weekly fact report into optional, structured OpenAI commentary and publish a mobile-friendly weekly recap plus persistent standings through Discord incoming webhooks. It also renders branded leaderboard PNG previews for visual review.
 
 ## Two distinct leaderboards
 
@@ -32,12 +32,14 @@ These standings are not an alternate calculation of the internal KCDK leaderboar
 - `src/kcdk/dk_import.py`: alias-based CSV header normalization, Decimal-safe prize parsing, numeric parsing, member matching, tournament percentile calculation, and tied weekly standings.
 - `src/kcdk/lineups.py`: tolerant lineup parsing and side-by-side player ownership/FPTS metadata lookup. Unknown lineup formats produce warnings and do not block result import.
 - `src/kcdk/persistence.py`: SQLite schema initialization and the high-level normalize, match, rank, parse, and atomic import workflow.
-- `src/kcdk/analytics.py`: official season leaderboard, member/group player usage, and factual selection-pattern helpers.
+- `src/kcdk/analytics.py`: official season and tournament leaderboards, independent prior-week rank movement, member/group player usage, and factual selection-pattern helpers.
 - `src/kcdk/facts.py`: structured fact models, deterministic fact generators, transparent priority scoring, balanced selection, and weekly JSON-ready reports.
 - `src/kcdk/commentary.py`: compact fact-payload construction, OpenAI Responses API integration, structured-output validation, generation metadata, and Discord Markdown rendering/chunking.
 - `src/kcdk/commentary_prompt.py`: versioned prompt guardrails, tone profiles, and the strict output schema.
 - `src/kcdk/discord.py`: secret-safe, no-retry Discord incoming-webhook transport and centralized platform-limit validation.
 - `src/kcdk/publishing.py`: Discord renderers, local message/publication state, idempotency, and weekly orchestration.
+- `src/kcdk/leaderboard_graphics.py`: isolated Pillow renderer, centralized visual configuration, font and authored-asset fallbacks, measured text truncation, and both PNG layouts.
+- `src/kcdk/leaderboard_preview.py`: network-free mock-season and presentation-data preview composition.
 - `src/kcdk/cli.py`: normal command-line workflow available through `python -m kcdk weekly`.
 - `src/kcdk/members.py`: editable active/inactive member configuration.
 - `src/kcdk/config.py` and `src/kcdk/models.py`: portable project paths.
@@ -119,6 +121,56 @@ Dry-run imports into a temporary copy of the database, renders the same weekly
 recap and both leaderboards with deterministic preview commentary, and never
 contacts OpenAI or Discord. The existing scriptable `python -m kcdk weekly`
 command remains available for advanced automation.
+
+## Branded leaderboard PNG previews
+
+The Pillow renderer produces two matching, fixed-width graphics without
+changing analytical rank order:
+
+- `KCDK SEASON STANDINGS`, ranked by the official average-finish rules.
+- `KCDK TOURNAMENT PERFORMANCE`, ranked by money, average DraftKings points,
+  average tournament percentile, and display name.
+
+Both use a 1,400 px canvas width and fixed 52 px rows. Height grows with the
+number of entries instead of shrinking typography: 10, 15, and 20 rows render
+at 936, 1,196, and 1,456 px respectively. The intended normal range is 10–20
+members, with 20 as the maximum. Player names are ellipsized using Pillow glyph
+measurement; the default player text areas are 328 px for KCDK standings and
+318 px for tournament performance after padding.
+
+Movement is calculated independently for the two leaderboards against the
+immediately previous imported contest in the same season. Positive movement is
+shown as `▲ N`, decline as `▼ N`, unchanged as `—`, and a first appearance or
+first week as `NEW`. Later contests are never included in a historical
+comparison. Known zero winnings remain `$0`; unknown amounts remain `—`, and an
+asterisk marks incomplete prize history with one restrained explanatory note.
+
+Optional authored assets can be placed in `assets/branding/`:
+
+- `kcdk_logo.png`
+- `leaderboard_background.png`
+- `skyline.png`
+
+Their aspect ratios are preserved through contain/crop operations. Missing
+assets are not errors: the renderer supplies a KCDK mark, restrained skyline,
+and deterministic broadcast-style texture. Fonts are configurable through
+`LeaderboardVisualConfig`; without a project font it searches sensible system
+fonts and reports the selected fallback.
+
+Generate both 15-row review images from the real mock-season analytics plus
+preview-only synthetic presentation rows:
+
+```powershell
+python -m kcdk leaderboard-preview
+```
+
+The ignored outputs are:
+
+- `output/preview/kcdk_standings_preview.png`
+- `output/preview/tournament_performance_preview.png`
+
+These PNGs are review-only. Discord continues to use the existing text/embed
+leaderboards as the production default until the image design is approved.
 
 Open `notebooks/season_analysis.ipynb` in VS Code or Jupyter and run all cells. The notebook calls package code rather than duplicating business logic.
 
@@ -269,4 +321,4 @@ Before production use, validate the first real export's delimiter, encoding, hea
 1. Validate and adapt parsing and fact thresholds against the first real DraftKings export.
 2. Validate OpenAI commentary tone and prompt behavior with league feedback.
 3. Validate the full import/publish workflow against the first real weekly export.
-4. Build KCDK-branded leaderboard graphics from the persisted facts.
+4. Review and approve the branded leaderboard PNGs before any Discord image integration.
