@@ -1,6 +1,6 @@
 # KCDK
 
-KCDK is a local Python project for importing weekly DraftKings contest exports, identifying private KCDK members, and building persistent season, tournament, and player-usage analysis. It can turn the deterministic weekly fact report into optional, structured OpenAI commentary. Leaderboard graphics and Discord posting remain out of scope.
+KCDK is a local Python project for importing weekly DraftKings contest exports, identifying private KCDK members, and building persistent season, tournament, and player-usage analysis. It can turn the deterministic weekly fact report into optional, structured OpenAI commentary and publish a mobile-friendly weekly recap plus persistent standings through Discord incoming webhooks. Graphical leaderboard images remain out of scope.
 
 ## Two distinct leaderboards
 
@@ -36,6 +36,9 @@ These standings are not an alternate calculation of the internal KCDK leaderboar
 - `src/kcdk/facts.py`: structured fact models, deterministic fact generators, transparent priority scoring, balanced selection, and weekly JSON-ready reports.
 - `src/kcdk/commentary.py`: compact fact-payload construction, OpenAI Responses API integration, structured-output validation, generation metadata, and Discord Markdown rendering/chunking.
 - `src/kcdk/commentary_prompt.py`: versioned prompt guardrails, tone profiles, and the strict output schema.
+- `src/kcdk/discord.py`: secret-safe, no-retry Discord incoming-webhook transport and centralized platform-limit validation.
+- `src/kcdk/publishing.py`: Discord renderers, local message/publication state, idempotency, and weekly orchestration.
+- `src/kcdk/cli.py`: normal command-line workflow available through `python -m kcdk weekly`.
 - `src/kcdk/members.py`: editable active/inactive member configuration.
 - `src/kcdk/config.py` and `src/kcdk/models.py`: portable project paths.
 - `data/mock/`: version-controlled fictional members and contest fixtures.
@@ -56,11 +59,12 @@ cd kc_dk
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
+python -m pip install -e .
 Copy-Item data\members.example.csv data\members.csv
 Copy-Item .env.example .env
 ```
 
-Edit the ignored `.env` file and replace its placeholder with your local API key. Never commit `.env` or paste its value into notebooks, logs, screenshots, or issue reports. `OPENAI_MODEL` defaults to `gpt-5.4-mini` and can be overridden in `.env`.
+Edit the ignored `.env` file and replace its placeholders with your local API key and two Discord incoming-webhook URLs. Never commit `.env` or paste its values into notebooks, logs, screenshots, or issue reports. `OPENAI_MODEL` defaults to `gpt-5.4-mini` and can be overridden in `.env`. Discord uses `DISCORD_WEEKLY_WEBHOOK_URL` for new weekly recaps and `DISCORD_LEADERBOARD_WEBHOOK_URL` for the two persistent leaderboard messages. A Discord bot token is not used or required.
 
 Run tests:
 
@@ -160,7 +164,49 @@ result = generate_weekly_commentary(
 )
 ```
 
-Only context for members appearing in selected facts is sent. Commentary notes are whitespace-cleaned and length-limited; callers are responsible for supplying only non-sensitive, fantasy-relevant notes. `render_discord_markdown` formats validated output and neutralizes mass mentions. `chunk_discord_markdown` splits it below Discord's 2,000-character message limit. Neither function posts anything.
+Only context for members appearing in selected facts is sent. Commentary notes are whitespace-cleaned and length-limited; callers are responsible for supplying only non-sensitive, fantasy-relevant notes. `render_discord_markdown` formats validated output, hides internal fact IDs by default, and neutralizes mass mentions. Fact IDs remain in the structured response and can be included only through its explicit debug option. `chunk_discord_markdown` splits text below Discord's 2,000-character message limit. Neither function posts anything.
+
+## Discord weekly publishing
+
+The normal publishing flow keeps importing, analytics, fact generation, OpenAI commentary, Discord rendering, webhook transport, and local publication state separate. The weekly-results webhook receives one new recap containing the week label, Commissioner Report, compact internal results, tournament rank/earnings highlights, and completeness notes only when relevant. Normal public output never includes internal fact IDs.
+
+The leaderboard webhook owns exactly two persistent messages:
+
+1. `KCDK SEASON STANDINGS`, ranked by average weekly KCDK finish and showing rank, member, average finish, wins, podiums, and weeks.
+2. `TOURNAMENT EARNINGS`, ranked by known winnings and then average DraftKings points, showing cashes and known/played prize weeks.
+
+Message IDs and published-week records are stored atomically in ignored local state at `data/processed/discord_state.json`. Webhook URLs are never stored there. The first live run creates each leaderboard message; later runs edit those IDs. A stale/deleted message ID causes a clear failure and no automatic replacement, preventing silent duplicate leaderboard spam. Remove or deliberately repair that state entry only after confirming the Discord message is truly gone.
+
+Weekly publication is idempotent. Re-running an already published season/contest refreshes the two leaderboards but skips the recap and avoids another OpenAI request. Use `--repost` only when a duplicate recap is intentional. A week is marked published only after Discord confirms the recap post. Successful initial leaderboard creation is saved immediately, so a later recap failure will not duplicate leaderboard messages on the next run.
+
+Preview a week without contacting Discord or OpenAI:
+
+```powershell
+python -m kcdk weekly `
+  --csv data\mock\season_week_4.csv `
+  --members data\mock\members.csv `
+  --database data\processed\kcdk.sqlite `
+  --season mock-2026 `
+  --season-name "Mock 2026" `
+  --week "Week 4" `
+  --week-number 4 `
+  --year 2026 `
+  --tone normal `
+  --dry-run
+```
+
+The dry run performs the local idempotent CSV import, renders all three Discord payloads, reports whether the week is already published, and lists the create/edit/skip operations that would occur. It uses a deterministic fact preview rather than incurring an OpenAI charge. Add `--generate-commentary` only when a paid commentary request during dry run is deliberate. Remove `--dry-run` for live publishing. Use `--repost` to intentionally publish an already-recorded week again.
+
+Discord content, embed, field, and combined embed limits are centralized and validated before transport. All outbound payloads disable mentions. Transport uses a finite timeout and no automatic retries because retrying a successful-but-ambiguous webhook request can create duplicates. Errors include only safe operation/status information and never webhook URLs.
+
+An additional mock-only transport smoke test is available:
+
+```powershell
+python scripts\smoke_discord.py
+python scripts\smoke_discord.py --live  # only after confirming both destinations are test-safe
+```
+
+The default command is network-free. The explicit live form creates and deletes one labeled weekly test message and creates or edits two labeled persistent test leaderboard messages using separate ignored smoke-test state. It never calls OpenAI.
 
 ## Mock multi-week season
 
@@ -174,5 +220,5 @@ Before production use, validate the first real export's delimiter, encoding, hea
 
 1. Validate and adapt parsing and fact thresholds against the first real DraftKings export.
 2. Validate OpenAI commentary tone and prompt behavior with league feedback.
-3. Build leaderboard graphics from the persisted facts.
-4. Add Discord integration.
+3. Validate the full import/publish workflow against the first real weekly export.
+4. Build KCDK-branded leaderboard graphics from the persisted facts.

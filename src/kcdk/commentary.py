@@ -597,19 +597,22 @@ def _neutralize_discord_mentions(text: str) -> str:
     )
 
 
-def render_discord_markdown(commentary: StructuredCommentary) -> str:
-    """Render validated commentary without posting it anywhere."""
+def render_discord_markdown(
+    commentary: StructuredCommentary, *, include_fact_ids: bool = False
+) -> str:
+    """Render commentary for Discord, hiding internal fact IDs by default."""
     sections = [
         f"## {commentary.headline}",
         commentary.intro,
     ]
     if commentary.roasts:
-        sections.append(
-            "\n".join(
-                f"- **{roast.member}:** {roast.text}\n  *Facts: {', '.join(roast.fact_ids)}*"
-                for roast in commentary.roasts
-            )
-        )
+        lines = []
+        for roast in commentary.roasts:
+            line = f"- **{roast.member}:** {roast.text}"
+            if include_fact_ids:
+                line += f"\n  *Facts: {', '.join(roast.fact_ids)}*"
+            lines.append(line)
+        sections.append("\n".join(lines))
     sections.append(commentary.closing)
     return _neutralize_discord_mentions("\n\n".join(sections))
 

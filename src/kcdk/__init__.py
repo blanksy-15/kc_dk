@@ -38,6 +38,21 @@ from .commentary import (
     generate_weekly_commentary,
     render_discord_markdown,
 )
+from .discord import (
+    DiscordConfig,
+    DiscordMessage,
+    DiscordWebhookClient,
+)
+from .publishing import (
+    DiscordState,
+    DiscordStateStore,
+    PublishingError,
+    publish_weekly_report,
+    render_kcdk_leaderboard,
+    render_tournament_leaderboard,
+    render_weekly_recap,
+    run_weekly_workflow,
+)
 
 __all__ = [
     "REQUIRED_FIELDS",
@@ -72,4 +87,15 @@ __all__ = [
     "chunk_discord_markdown",
     "generate_weekly_commentary",
     "render_discord_markdown",
+    "DiscordConfig",
+    "DiscordMessage",
+    "DiscordWebhookClient",
+    "DiscordState",
+    "DiscordStateStore",
+    "PublishingError",
+    "publish_weekly_report",
+    "render_kcdk_leaderboard",
+    "render_tournament_leaderboard",
+    "render_weekly_recap",
+    "run_weekly_workflow",
 ]

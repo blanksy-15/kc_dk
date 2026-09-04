@@ -366,11 +366,13 @@ def test_discord_markdown_renderer_and_chunking():
     )
 
     markdown = render_discord_markdown(commentary)
+    debug_markdown = render_discord_markdown(commentary, include_fact_ids=True)
     chunks = chunk_discord_markdown(markdown, max_chars=120)
 
     assert markdown.startswith("## Week")
     assert "**Casey North:**" in markdown
-    assert "*Facts: fact_123*" in markdown
+    assert "fact_123" not in markdown
+    assert "*Facts: fact_123*" in debug_markdown
     assert "@everyone" not in markdown
     assert "@here" not in markdown
     assert len(chunks) > 1
