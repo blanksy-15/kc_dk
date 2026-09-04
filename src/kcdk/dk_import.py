@@ -1,6 +1,7 @@
 """DraftKings CSV normalization and KCDK contest calculations."""
 
 from pathlib import Path
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 from typing import Iterable
 
@@ -18,6 +19,7 @@ _FIELD_ALIASES = {
     "roster_position": {"rosterposition", "roster_position", "position"},
     "drafted_pct": {"drafted", "drafted_pct", "percent_drafted", "drafted_percentage"},
     "fpts": {"fpts", "player_points", "fantasy_points_player"},
+    "prize": {"prize", "winnings", "prize_amount", "amount_won"},
 }
 
 
@@ -30,6 +32,30 @@ def _parse_numeric(values: pd.Series, *, percentage: bool = False) -> pd.Series:
     if percentage:
         cleaned = cleaned.str.replace("%", "", regex=False)
     return pd.to_numeric(cleaned.replace({"": pd.NA, "-": pd.NA}), errors="coerce")
+
+
+def parse_money_to_cents(value: object) -> int | None:
+    """Parse an optional currency value into exact integer cents.
+
+    Missing or unrecognized values remain unknown rather than becoming zero.
+    """
+    if value is None or pd.isna(value):
+        return None
+    text = str(value).strip()
+    if text.casefold() in {"", "-", "--", "n/a", "na", "null", "none"}:
+        return None
+    negative = text.startswith("(") and text.endswith(")")
+    cleaned = text.strip("()").replace("$", "").replace(",", "").strip()
+    try:
+        amount = Decimal(cleaned)
+    except InvalidOperation:
+        return None
+    if negative:
+        amount = -amount
+    if amount < 0:
+        return None
+    cents = (amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return int(cents)
 
 
 def normalize_headers(headers: Iterable[object]) -> dict[str, str]:
@@ -62,6 +88,10 @@ def normalize_contest(data: pd.DataFrame) -> pd.DataFrame:
         normalized["drafted_pct"] = _parse_numeric(normalized["drafted_pct"], percentage=True)
     if "fpts" in normalized:
         normalized["fpts"] = _parse_numeric(normalized["fpts"])
+    if "prize" in normalized:
+        normalized["prize_cents"] = normalized["prize"].map(
+            parse_money_to_cents
+        ).astype("Int64")
     return normalized
 
 

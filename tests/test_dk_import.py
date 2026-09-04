@@ -8,6 +8,7 @@ from kcdk.dk_import import (
     match_kcdk_members,
     normalize_contest,
     normalize_headers,
+    parse_money_to_cents,
     percentile_from_rank,
     weekly_standings,
 )
@@ -21,6 +22,34 @@ def test_header_normalization_and_mock_import():
     contest = import_contest(ROOT / "data" / "mock" / "contest.csv")
     assert {"rank", "entry_id", "entry_name", "points", "lineup"}.issubset(contest.columns)
     assert contest["drafted_pct"].iloc[1] == pytest.approx(22.1)
+
+
+def test_prize_header_aliases_and_decimal_safe_currency_parsing():
+    for header in ["Prize", "Winnings", "Prize Amount", "Amount Won"]:
+        assert normalize_headers([header])[header] == "prize"
+
+    assert parse_money_to_cents("$1,234.56") == 123456
+    assert parse_money_to_cents("0") == 0
+    assert parse_money_to_cents("$0.00") == 0
+    assert parse_money_to_cents("12.345") == 1235
+    assert parse_money_to_cents(12.5) == 1250
+    assert parse_money_to_cents("") is None
+    assert parse_money_to_cents("N/A") is None
+    assert parse_money_to_cents("unknown") is None
+
+    contest = normalize_contest(
+        pd.DataFrame(
+            {
+                "Rank": [1, 2],
+                "Entry ID": [1, 2],
+                "Entry Name": ["A", "B"],
+                "Points": [100, 90],
+                "Amount Won": ["$0.00", ""],
+            }
+        )
+    )
+    assert contest.loc[0, "prize_cents"] == 0
+    assert pd.isna(contest.loc[1, "prize_cents"])
 
 
 def test_missing_required_columns_reports_found_headers():

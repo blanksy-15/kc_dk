@@ -8,7 +8,7 @@ import pandas as pd
 
 
 # Kept as data so future official tiebreak changes stay localized.
-LEADERBOARD_TIEBREAKERS = (
+KCDK_LEADERBOARD_TIEBREAKERS = (
     ("average_finish", True),
     ("wins", False),
     ("podium_finishes", False),
@@ -16,15 +16,36 @@ LEADERBOARD_TIEBREAKERS = (
     ("display_name", True),
 )
 
+# Backward-compatible name from the original single-leaderboard implementation.
+LEADERBOARD_TIEBREAKERS = KCDK_LEADERBOARD_TIEBREAKERS
+
+TOURNAMENT_LEADERBOARD_TIEBREAKERS = (
+    ("total_money_won", False),
+    ("average_draftkings_fantasy_points", False),
+    ("average_tournament_percentile", False),
+    ("display_name", True),
+)
+
 
 def sort_leaderboard(leaderboard: pd.DataFrame) -> pd.DataFrame:
     """Apply the configurable official ordering and assign deterministic ranks."""
-    sort_columns = [item[0] for item in LEADERBOARD_TIEBREAKERS]
-    ascending = [item[1] for item in LEADERBOARD_TIEBREAKERS]
+    sort_columns = [item[0] for item in KCDK_LEADERBOARD_TIEBREAKERS]
+    ascending = [item[1] for item in KCDK_LEADERBOARD_TIEBREAKERS]
     ranked = leaderboard.sort_values(
         sort_columns, ascending=ascending, kind="stable"
     ).reset_index(drop=True)
     ranked.insert(0, "season_rank", range(1, len(ranked) + 1))
+    return ranked
+
+
+def sort_tournament_leaderboard(leaderboard: pd.DataFrame) -> pd.DataFrame:
+    """Apply the separately configurable tournament-performance ordering."""
+    sort_columns = [item[0] for item in TOURNAMENT_LEADERBOARD_TIEBREAKERS]
+    ascending = [item[1] for item in TOURNAMENT_LEADERBOARD_TIEBREAKERS]
+    ranked = leaderboard.sort_values(
+        sort_columns, ascending=ascending, kind="stable", na_position="last"
+    ).reset_index(drop=True)
+    ranked.insert(0, "tournament_rank", range(1, len(ranked) + 1))
     return ranked
 
 
@@ -36,7 +57,8 @@ def _season_results(
         SELECT c.id AS contest_id, c.week_number, c.week_label,
                m.id AS member_id, m.member_key, m.display_name,
                r.kcdk_finish, r.draftkings_fantasy_points,
-               r.tournament_percentile, r.draftkings_overall_rank
+               r.tournament_percentile, r.draftkings_overall_rank,
+               r.prize_cents
         FROM member_results r
         JOIN contests c ON c.id = r.contest_id
         JOIN seasons s ON s.id = c.season_id
@@ -100,6 +122,80 @@ def season_leaderboard(
     return leaderboard[columns]
 
 
+def _money_sum(values: pd.Series) -> float:
+    cents = values.sum(min_count=1)
+    return cents / 100.0
+
+
+def _money_mean(values: pd.Series) -> float:
+    cents = values.mean()
+    return cents / 100.0
+
+
+def _known_cash_count(values: pd.Series) -> object:
+    if values.count() == 0:
+        return pd.NA
+    return int(values.gt(0).sum())
+
+
+def _known_cash_rate(values: pd.Series) -> float:
+    known = int(values.count())
+    if known == 0:
+        return float("nan")
+    return float(values.gt(0).sum()) / known * 100.0
+
+
+def tournament_performance_leaderboard(
+    connection: sqlite3.Connection, season_identifier: str
+) -> pd.DataFrame:
+    """Aggregate the distinct money-first DraftKings tournament leaderboard."""
+    results = _season_results(connection, season_identifier)
+    columns = [
+        "tournament_rank",
+        "display_name",
+        "weeks_played",
+        "weeks_with_prize_data",
+        "prize_data_complete",
+        "total_money_won",
+        "average_money_won_per_known_week",
+        "cashes",
+        "cash_rate",
+        "largest_single_tournament_win",
+        "average_draftkings_fantasy_points",
+        "highest_draftkings_fantasy_score",
+        "average_tournament_percentile",
+        "best_tournament_rank",
+        "average_tournament_rank",
+    ]
+    if results.empty:
+        return pd.DataFrame(columns=columns)
+
+    grouped = results.groupby(["member_id", "display_name"], sort=False)
+    leaderboard = grouped.agg(
+        weeks_played=("contest_id", "nunique"),
+        weeks_with_prize_data=("prize_cents", "count"),
+        total_money_won=("prize_cents", _money_sum),
+        average_money_won_per_known_week=("prize_cents", _money_mean),
+        cashes=("prize_cents", _known_cash_count),
+        cash_rate=("prize_cents", _known_cash_rate),
+        largest_single_tournament_win=("prize_cents", "max"),
+        average_draftkings_fantasy_points=("draftkings_fantasy_points", "mean"),
+        highest_draftkings_fantasy_score=("draftkings_fantasy_points", "max"),
+        average_tournament_percentile=("tournament_percentile", "mean"),
+        best_tournament_rank=("draftkings_overall_rank", "min"),
+        average_tournament_rank=("draftkings_overall_rank", "mean"),
+    ).reset_index()
+    leaderboard["largest_single_tournament_win"] = (
+        leaderboard["largest_single_tournament_win"] / 100.0
+    )
+    leaderboard["prize_data_complete"] = leaderboard[
+        "weeks_with_prize_data"
+    ].eq(leaderboard["weeks_played"])
+    leaderboard["cashes"] = leaderboard["cashes"].astype("Int64")
+    leaderboard = sort_tournament_leaderboard(leaderboard)
+    return leaderboard[columns]
+
+
 def _usage_rows(connection: sqlite3.Connection, season_identifier: str) -> pd.DataFrame:
     usage = pd.read_sql_query(
         """
@@ -108,7 +204,8 @@ def _usage_rows(connection: sqlite3.Connection, season_identifier: str) -> pd.Da
                p.id AS player_id, p.display_name AS player_name,
                lp.roster_position, lp.player_fantasy_points,
                lp.draftkings_ownership_percentage,
-               r.kcdk_finish
+               r.kcdk_finish, r.prize_cents,
+               r.draftkings_fantasy_points AS member_draftkings_fantasy_points
         FROM lineup_players lp
         JOIN contests c ON c.id = lp.contest_id
         JOIN seasons s ON s.id = c.season_id
@@ -159,6 +256,11 @@ def member_player_usage(
         "wins_with_player",
         "podiums_with_player",
         "last_place_finishes_with_player",
+        "weeks_with_prize_data_when_rostered",
+        "total_money_won_when_rostered",
+        "cashes_with_player",
+        "cash_rate_with_player",
+        "average_member_draftkings_fantasy_points_when_rostered",
     ]
     if usage.empty:
         return pd.DataFrame(columns=columns)
@@ -182,6 +284,14 @@ def member_player_usage(
         wins_with_player=("kcdk_finish", lambda values: int(values.eq(1).sum())),
         podiums_with_player=("kcdk_finish", lambda values: int(values.le(3).sum())),
         last_place_finishes_with_player=("is_last_place", "sum"),
+        weeks_with_prize_data_when_rostered=("prize_cents", "count"),
+        total_money_won_when_rostered=("prize_cents", _money_sum),
+        cashes_with_player=("prize_cents", _known_cash_count),
+        cash_rate_with_player=("prize_cents", _known_cash_rate),
+        average_member_draftkings_fantasy_points_when_rostered=(
+            "member_draftkings_fantasy_points",
+            "mean",
+        ),
     ).reset_index()
     report["usage_percentage"] = report.apply(
         lambda row: row["times_rostered"] / weeks_by_member[row["member_id"]] * 100.0,
@@ -190,6 +300,7 @@ def member_player_usage(
     report["last_place_finishes_with_player"] = report[
         "last_place_finishes_with_player"
     ].astype(int)
+    report["cashes_with_player"] = report["cashes_with_player"].astype("Int64")
     return report.sort_values(
         ["display_name", "times_rostered", "player_name"],
         ascending=[True, False, True],

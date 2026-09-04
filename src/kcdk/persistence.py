@@ -16,7 +16,7 @@ from .lineups import parse_member_lineup, player_key, player_metadata
 from .members import load_members
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 
@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS member_results (
     draftkings_overall_rank INTEGER,
     draftkings_fantasy_points REAL NOT NULL,
     tournament_percentile REAL,
+    prize_cents INTEGER CHECK (prize_cents IS NULL OR prize_cents >= 0),
     entry_id TEXT,
     entry_name TEXT NOT NULL,
     UNIQUE (contest_id, member_id)
@@ -141,6 +142,18 @@ def connect_database(path: str | Path = ":memory:") -> sqlite3.Connection:
 def initialize_database(connection: sqlite3.Connection) -> None:
     """Create normalized season-history tables idempotently."""
     connection.executescript(SCHEMA)
+    result_columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(member_results)")
+    }
+    if "prize_cents" not in result_columns:
+        connection.execute(
+            """
+            ALTER TABLE member_results
+            ADD COLUMN prize_cents INTEGER
+            CHECK (prize_cents IS NULL OR prize_cents >= 0)
+            """
+        )
     connection.execute(
         "INSERT OR IGNORE INTO schema_versions(version, applied_at) VALUES (?, ?)",
         (SCHEMA_VERSION, _utc_now()),
@@ -295,6 +308,8 @@ def import_week(
     standings = weekly_standings(contest, active_members)
     fingerprint = _fingerprint(source_path)
     warnings: list[str] = []
+    has_prize_field = "prize_cents" in contest.columns
+    missing_prize_members: list[str] = []
 
     if standings["display_name"].duplicated().any():
         duplicates = standings.loc[
@@ -373,13 +388,17 @@ def import_week(
             source_row = result_by_entry[match_name]
             member_id = member_ids[match_name]
             entry_id = source_row.get("entry_id")
+            source_prize = source_row.get("prize_cents") if has_prize_field else None
+            prize_cents = None if pd.isna(source_prize) else int(source_prize)
+            if prize_cents is None:
+                missing_prize_members.append(str(standing["display_name"]))
             connection.execute(
                 """
                 INSERT INTO member_results(
                     contest_id, member_id, kcdk_finish, draftkings_overall_rank,
                     draftkings_fantasy_points, tournament_percentile,
-                    entry_id, entry_name
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    prize_cents, entry_id, entry_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     contest_id,
@@ -392,6 +411,7 @@ def import_week(
                     None
                     if pd.isna(standing["overall_percentile"])
                     else float(standing["overall_percentile"]),
+                    prize_cents,
                     None if pd.isna(entry_id) else str(int(entry_id)),
                     str(standing["draftkings_entry_name"]),
                 ),
@@ -439,6 +459,15 @@ def import_week(
             warnings.append("No lineup-player records were imported; standings were saved.")
         if standings.empty:
             warnings.append("No active KCDK members matched this contest.")
+        if not has_prize_field:
+            warnings.append(
+                "No prize/winnings field was found; prize amounts were stored as unknown."
+            )
+        elif missing_prize_members:
+            warnings.append(
+                "Prize/winnings data was unknown for: "
+                + ", ".join(sorted(missing_prize_members))
+            )
 
     return ImportSummary(
         season=season_name,
@@ -464,7 +493,7 @@ def weekly_results(
     query = f"""
         SELECT c.week_number, c.week_label, m.display_name, r.kcdk_finish,
                r.draftkings_overall_rank, r.draftkings_fantasy_points,
-               r.tournament_percentile, r.entry_id, r.entry_name
+               r.tournament_percentile, r.prize_cents, r.entry_id, r.entry_name
         FROM member_results r
         JOIN contests c ON c.id = r.contest_id
         JOIN seasons s ON s.id = c.season_id
@@ -473,4 +502,6 @@ def weekly_results(
         ORDER BY COALESCE(c.week_number, 2147483647), c.week_label,
                  r.kcdk_finish, r.draftkings_overall_rank, m.display_name
     """
-    return pd.read_sql_query(query, connection, params=parameters)
+    results = pd.read_sql_query(query, connection, params=parameters)
+    results["money_won"] = results["prize_cents"] / 100.0
+    return results

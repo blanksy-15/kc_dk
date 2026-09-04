@@ -1,11 +1,11 @@
-Rank,Entry ID,Entry Name,Points,Lineup,Player,Roster Position,% Drafted,FPTS
-1,14001,SalarySavant,198.00,QB Delta Dawn | RB Beacon Birch | WR River Rush,Delta Dawn,QB,14.0%,30.0
-2,14002,NorthStarDFS,189.00,QB Comet Core | RB Nova North | WR Prism Peak,Comet Core,QB,19.0%,25.0
-3,14003,CourtVision88,186.00,QB Nova North | RB Prism Peak | WR River Rush,Beacon Birch,RB,29.0%,20.0
-4,14004,MapleLineup,180.00,QB Beacon Birch | RB Nova North | WR River Rush,Nova North,RB,33.0%,21.0
-5,14005,FourthQuarter,167.00,QB Orbit One | RB Anchor Low | WR River Rush,Prism Peak,WR,16.0%,18.0
-6,14006,FieldEntryOne,164.00,QB Field Quarter | RB Field Runner | WR Field Catch,River Rush,WR,24.0%,17.0
-7,14007,FieldEntryTwo,161.00,QB Field Quarter | RB Field Runner | WR Field Catch,Orbit One,QB,26.0%,19.0
-8,14008,FieldEntryThree,157.00,QB Field Quarter | RB Field Runner | WR Field Catch,Anchor Low,RB,3.0%,4.0
-9,14009,FieldEntryFour,152.00,QB Field Quarter | RB Field Runner | WR Field Catch,Field Quarter,QB,7.0%,15.0
-10,14010,FieldEntryFive,147.00,QB Field Quarter | RB Field Runner | WR Field Catch,Field Runner,RB,11.0%,8.0
+Rank,Entry ID,Entry Name,Points,Prize,Lineup,Player,Roster Position,% Drafted,FPTS
+1,14001,SalarySavant,198.00,$15.00,QB Delta Dawn | RB Beacon Birch | WR River Rush,Delta Dawn,QB,14.0%,30.0
+2,14002,NorthStarDFS,189.00,$0.00,QB Comet Core | RB Nova North | WR Prism Peak,Comet Core,QB,19.0%,25.0
+3,14003,CourtVision88,186.00,$0.00,QB Nova North | RB Prism Peak | WR River Rush,Beacon Birch,RB,29.0%,20.0
+4,14004,MapleLineup,180.00,$0.00,QB Beacon Birch | RB Nova North | WR River Rush,Nova North,RB,33.0%,21.0
+5,14005,FourthQuarter,167.00,,QB Orbit One | RB Anchor Low | WR River Rush,Prism Peak,WR,16.0%,18.0
+6,14006,FieldEntryOne,164.00,$0.00,QB Field Quarter | RB Field Runner | WR Field Catch,River Rush,WR,24.0%,17.0
+7,14007,FieldEntryTwo,161.00,$0.00,QB Field Quarter | RB Field Runner | WR Field Catch,Orbit One,QB,26.0%,19.0
+8,14008,FieldEntryThree,157.00,$0.00,QB Field Quarter | RB Field Runner | WR Field Catch,Anchor Low,RB,3.0%,4.0
+9,14009,FieldEntryFour,152.00,$0.00,QB Field Quarter | RB Field Runner | WR Field Catch,Field Quarter,QB,7.0%,15.0
+10,14010,FieldEntryFive,147.00,$0.00,QB Field Quarter | RB Field Runner | WR Field Catch,Field Runner,RB,11.0%,8.0

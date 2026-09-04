@@ -12,6 +12,7 @@ from .analytics import (
     group_player_usage,
     member_player_usage,
     season_leaderboard,
+    tournament_performance_leaderboard,
     unanimous_weekly_selections,
     unique_weekly_selections,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "import_week",
     "weekly_results",
     "season_leaderboard",
+    "tournament_performance_leaderboard",
     "member_player_usage",
     "group_player_usage",
     "consecutive_player_use",

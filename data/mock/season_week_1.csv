@@ -1,11 +1,11 @@
-Rank,Entry ID,Entry Name,Points,Lineup,Player,Roster Position,% Drafted,FPTS
-1,11001,NorthStarDFS,190.00,QB Comet Core | RB Zephyr Solo | WR Nova North,Comet Core,QB,18.0%,27.0
-2,11002,CourtVision88,185.00,QB Orbit One | RB Nova North | WR Prism Peak,Zephyr Solo,RB,2.0%,8.0
-3,11003,MapleLineup,180.00,QB Orbit One | RB Nova North | WR Prism Peak,Nova North,RB,24.0%,19.0
-4,11004,SalarySavant,175.00,QB Orbit One | RB Prism Peak | WR River Rush,Orbit One,QB,30.0%,23.0
-5,11005,FourthQuarter,170.00,QB Orbit One | RB Anchor Low | WR River Rush,Prism Peak,WR,12.0%,16.0
-6,11006,FieldEntryOne,168.00,QB Field Quarter | RB Field Runner | WR Field Catch,River Rush,WR,21.0%,14.0
-7,11007,FieldEntryTwo,165.00,QB Field Quarter | RB Field Runner | WR Field Catch,Anchor Low,RB,5.0%,7.0
-8,11008,FieldEntryThree,160.00,QB Field Quarter | RB Field Runner | WR Field Catch,Field Quarter,QB,9.0%,18.0
-9,11009,FieldEntryFour,155.00,QB Field Quarter | RB Field Runner | WR Field Catch,Field Runner,RB,15.0%,11.0
-10,11010,FieldEntryFive,150.00,QB Field Quarter | RB Field Runner | WR Field Catch,Field Catch,WR,8.0%,9.0
+Rank,Entry ID,Entry Name,Points,Prize,Lineup,Player,Roster Position,% Drafted,FPTS
+1,11001,NorthStarDFS,190.00,$100.00,QB Comet Core | RB Zephyr Solo | WR Nova North,Comet Core,QB,18.0%,27.0
+2,11002,CourtVision88,185.00,$25.00,QB Orbit One | RB Nova North | WR Prism Peak,Zephyr Solo,RB,2.0%,8.0
+3,11003,MapleLineup,180.00,$0.00,QB Orbit One | RB Nova North | WR Prism Peak,Nova North,RB,24.0%,19.0
+4,11004,SalarySavant,175.00,$0.00,QB Orbit One | RB Prism Peak | WR River Rush,Orbit One,QB,30.0%,23.0
+5,11005,FourthQuarter,170.00,$0.00,QB Orbit One | RB Anchor Low | WR River Rush,Prism Peak,WR,12.0%,16.0
+6,11006,FieldEntryOne,168.00,$0.00,QB Field Quarter | RB Field Runner | WR Field Catch,River Rush,WR,21.0%,14.0
+7,11007,FieldEntryTwo,165.00,$0.00,QB Field Quarter | RB Field Runner | WR Field Catch,Anchor Low,RB,5.0%,7.0
+8,11008,FieldEntryThree,160.00,$0.00,QB Field Quarter | RB Field Runner | WR Field Catch,Field Quarter,QB,9.0%,18.0
+9,11009,FieldEntryFour,155.00,$0.00,QB Field Quarter | RB Field Runner | WR Field Catch,Field Runner,RB,15.0%,11.0
+10,11010,FieldEntryFive,150.00,$0.00,QB Field Quarter | RB Field Runner | WR Field Catch,Field Catch,WR,8.0%,9.0

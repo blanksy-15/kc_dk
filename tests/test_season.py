@@ -1,4 +1,5 @@
 from pathlib import Path
+import sqlite3
 
 import pandas as pd
 import pytest
@@ -11,10 +12,17 @@ from kcdk.analytics import (
     most_used_players_by_member,
     season_leaderboard,
     sort_leaderboard,
+    sort_tournament_leaderboard,
+    tournament_performance_leaderboard,
     unanimous_weekly_selections,
     unique_weekly_selections,
 )
-from kcdk.persistence import connect_database, import_week, weekly_results
+from kcdk.persistence import (
+    connect_database,
+    import_week,
+    initialize_database,
+    weekly_results,
+)
 from kcdk.lineups import parse_lineup_text
 
 
@@ -68,6 +76,32 @@ def test_database_initialization_has_normalized_schema(tmp_path):
         "lineup_players",
     }.issubset(tables)
     assert connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    result_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(member_results)")
+    }
+    assert "prize_cents" in result_columns
+    connection.close()
+
+
+def test_schema_migrates_an_existing_member_results_table(tmp_path):
+    path = tmp_path / "old.sqlite"
+    connection = sqlite3.connect(path)
+    connection.execute(
+        """
+        CREATE TABLE member_results (
+            id INTEGER PRIMARY KEY,
+            contest_id INTEGER,
+            member_id INTEGER
+        )
+        """
+    )
+    initialize_database(connection)
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(member_results)")}
+    versions = {
+        row[0] for row in connection.execute("SELECT version FROM schema_versions")
+    }
+    assert "prize_cents" in columns
+    assert 2 in versions
     connection.close()
 
 
@@ -179,6 +213,63 @@ def test_leaderboard_tiebreakers_are_applied_in_configured_order():
     assert ranked["season_rank"].tolist() == [1, 2, 3, 4, 5]
 
 
+def test_tournament_leaderboard_money_aggregation_and_ordering(season_db):
+    leaderboard = tournament_performance_leaderboard(season_db, "mock-2026")
+    assert leaderboard["display_name"].tolist() == [
+        "Casey North",
+        "Alex Rowan",
+        "Jordan Vale",
+        "Sam Ellis",
+        "Taylor Quinn",
+    ]
+
+    casey = leaderboard.set_index("display_name").loc["Casey North"]
+    assert casey["weeks_played"] == 4
+    assert casey["weeks_with_prize_data"] == 4
+    assert bool(casey["prize_data_complete"])
+    assert casey["total_money_won"] == pytest.approx(125.50)
+    assert casey["average_money_won_per_known_week"] == pytest.approx(31.375)
+    assert casey["cashes"] == 2
+    assert casey["cash_rate"] == pytest.approx(50)
+    assert casey["largest_single_tournament_win"] == pytest.approx(100)
+    assert casey["average_draftkings_fantasy_points"] == pytest.approx(186.75)
+    assert casey["highest_draftkings_fantasy_score"] == pytest.approx(190)
+    assert casey["best_tournament_rank"] == 1
+    assert casey["average_tournament_rank"] == pytest.approx(2.25)
+
+    # Alex and Jordan both won $50; Alex wins the fantasy-points tiebreak.
+    alex, jordan = leaderboard.set_index("display_name").loc[
+        ["Alex Rowan", "Jordan Vale"]
+    ].itertuples()
+    assert alex.total_money_won == jordan.total_money_won == pytest.approx(50)
+    assert alex.average_draftkings_fantasy_points > jordan.average_draftkings_fantasy_points
+
+    taylor = leaderboard.set_index("display_name").loc["Taylor Quinn"]
+    assert taylor["weeks_with_prize_data"] == 3
+    assert not bool(taylor["prize_data_complete"])
+    assert taylor["total_money_won"] == pytest.approx(0)
+    assert taylor["cashes"] == 0
+    assert taylor["cash_rate"] == pytest.approx(0)
+
+
+def test_tournament_leaderboard_secondary_and_later_tiebreakers():
+    candidates = pd.DataFrame(
+        {
+            "display_name": ["Delta", "Charlie", "Bravo", "Alpha"],
+            "total_money_won": [50, 50, 50, 100],
+            "average_draftkings_fantasy_points": [200, 200, 210, 100],
+            "average_tournament_percentile": [80, 90, 70, 50],
+        }
+    )
+    ranked = sort_tournament_leaderboard(candidates)
+    assert ranked["display_name"].tolist() == [
+        "Alpha",
+        "Bravo",
+        "Charlie",
+        "Delta",
+    ]
+
+
 def test_weekly_results_are_available_after_import(season_db):
     week = weekly_results(season_db, "mock-2026", "Week 3")
     assert week["display_name"].tolist() == [
@@ -188,6 +279,34 @@ def test_weekly_results_are_available_after_import(season_db):
         "Jordan Vale",
         "Taylor Quinn",
     ]
+    by_member = week.set_index("display_name")
+    assert by_member.loc["Casey North", "prize_cents"] == 2550
+    assert by_member.loc["Casey North", "money_won"] == pytest.approx(25.50)
+
+
+def test_known_zero_and_missing_prize_are_distinct(season_db):
+    week = weekly_results(season_db, "mock-2026", "Week 4").set_index("display_name")
+    assert week.loc["Casey North", "prize_cents"] == 0
+    assert week.loc["Casey North", "money_won"] == 0
+    assert pd.isna(week.loc["Taylor Quinn", "prize_cents"])
+    assert pd.isna(week.loc["Taylor Quinn", "money_won"])
+
+
+def test_member_level_missing_prize_is_reported(tmp_path):
+    connection = connect_database(tmp_path / "missing-prize.sqlite")
+    summary = import_week(
+        connection,
+        MOCK / "season_week_4.csv",
+        MEMBERS,
+        season_name="Missing Prize",
+        season_identifier="missing-prize",
+        week_number=4,
+    )
+    assert any(
+        "Prize/winnings data was unknown for: Taylor Quinn" in warning
+        for warning in summary.warnings
+    )
+    connection.close()
 
 
 def test_member_player_usage_counts_percentages_and_result_context(season_db):
@@ -203,6 +322,13 @@ def test_member_player_usage_counts_percentages_and_result_context(season_db):
     assert comet["wins_with_player"] == 1
     assert comet["podiums_with_player"] == 3
     assert comet["last_place_finishes_with_player"] == 0
+    assert comet["weeks_with_prize_data_when_rostered"] == 4
+    assert comet["total_money_won_when_rostered"] == pytest.approx(125.50)
+    assert comet["cashes_with_player"] == 2
+    assert comet["cash_rate_with_player"] == pytest.approx(50)
+    assert comet[
+        "average_member_draftkings_fantasy_points_when_rostered"
+    ] == pytest.approx(186.75)
 
 
 def test_group_usage_and_factual_usage_helpers(season_db):
@@ -262,6 +388,17 @@ def test_result_import_succeeds_without_player_level_data(tmp_path):
     assert summary.member_result_rows_stored == 2
     assert summary.lineup_player_rows_stored == 0
     assert any("No lineup-player records" in warning for warning in summary.warnings)
+    assert any("No prize/winnings field" in warning for warning in summary.warnings)
+    results = weekly_results(connection, "no-lineups")
+    assert results["prize_cents"].isna().all()
+    assert results["money_won"].isna().all()
+    tournament = tournament_performance_leaderboard(
+        connection, "no-lineups"
+    ).set_index("display_name")
+    assert tournament["weeks_with_prize_data"].eq(0).all()
+    assert tournament["total_money_won"].isna().all()
+    assert tournament["cashes"].isna().all()
+    assert not tournament["prize_data_complete"].any()
     connection.close()
 
 
