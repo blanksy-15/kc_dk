@@ -16,7 +16,7 @@ The importer requires rank, entry ID, entry name, points, and lineup. It accepts
 ## Setup on Windows
 
 ```powershell
-cd Z:\kc_dk
+cd Z:\
 git clone https://github.com/blanksy-15/kc_dk.git
 cd kc_dk
 py -3 -m venv .venv
