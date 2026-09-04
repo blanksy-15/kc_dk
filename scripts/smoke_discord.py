@@ -3,11 +3,14 @@
 Without ``--live`` this renders a safe preview. With ``--live`` it posts and
 deletes one clearly labeled weekly test message, then creates or edits two
 clearly labeled persistent test leaderboard messages. No OpenAI call is made.
+With ``--png-leaderboards``, only the two persistent leaderboards are updated;
+no weekly message is posted or deleted.
 """
 
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import json
 from pathlib import Path
 import sys
@@ -19,12 +22,15 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from kcdk.discord import (  # noqa: E402
     DiscordConfig,
+    DiscordError,
     DiscordMessage,
     DiscordWebhookClient,
 )
+from kcdk.leaderboard_delivery import LeaderboardConfig, deliver_leaderboard  # noqa: E402
 from kcdk.persistence import connect_database, import_week  # noqa: E402
 from kcdk.publishing import (  # noqa: E402
     DiscordStateStore,
+    PublishingError,
     publish_weekly_report,
 )
 
@@ -56,7 +62,8 @@ def _label_message(message: DiscordMessage, label: str) -> DiscordMessage:
         labeled = dict(embed)
         labeled["title"] = f"[SMOKE TEST] {labeled.get('title', label)}"
         embeds.append(labeled)
-    return DiscordMessage(content=message.content, embeds=tuple(embeds))
+    return replace(message, content=f"[SMOKE TEST] {message.content}" if message.content else "",
+                   embeds=tuple(embeds))
 
 
 def _upsert_test_leaderboard(
@@ -71,14 +78,18 @@ def _upsert_test_leaderboard(
     return client.create_message(webhook_url, message), "created"
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--live",
         action="store_true",
         help="Perform the explicitly controlled webhook smoke sequence.",
     )
-    arguments = parser.parse_args()
+    parser.add_argument(
+        "--png-leaderboards", action="store_true",
+        help="Render and update only the two persistent PNG test leaderboards; no recap.",
+    )
+    arguments = parser.parse_args(argv)
     temporary, connection = _mock_database()
     try:
         preview = publish_weekly_report(
@@ -87,18 +98,46 @@ def main() -> int:
             week_label="Week 4",
             dry_run=True,
             state_store=DiscordStateStore(SMOKE_STATE),
+            leaderboard_config=replace(
+                LeaderboardConfig.from_env(ROOT / ".env"),
+                mode="image" if arguments.png_leaderboards else "text",
+                output_directory=ROOT / "output" / "leaderboards",
+            ),
         )
         if not arguments.live:
             print(json.dumps(preview.to_dict(), indent=2, sort_keys=True))
             print("Live Discord smoke test skipped; rerun with --live intentionally.")
             return 0
 
-        config = DiscordConfig.from_env()
+        config = DiscordConfig.from_env(require_webhooks=not arguments.png_leaderboards)
         client = DiscordWebhookClient(timeout_seconds=config.timeout_seconds)
         weekly_url = config.weekly_webhook_url
         leaderboard_url = config.leaderboard_webhook_url
-        if weekly_url is None or leaderboard_url is None:
-            raise RuntimeError("Both Discord webhooks are required.")
+        if leaderboard_url is None:
+            raise DiscordError("The leaderboard webhook is required.")
+
+        if arguments.png_leaderboards:
+            store = DiscordStateStore(SMOKE_STATE)
+            state = store.load()
+            for item, attribute in zip(preview.leaderboards, (
+                "kcdk_leaderboard_message_id", "tournament_leaderboard_message_id",
+            )):
+                item.message = _label_message(item.message, item.target)
+                item.fallback = _label_message(item.fallback, item.target)
+                message_id = deliver_leaderboard(client, leaderboard_url, item)
+                setattr(state, attribute, message_id)
+                store.save(state)
+            print(json.dumps({
+                "leaderboards": [item.to_dict() for item in preview.leaderboards],
+                "weekly_recap_posted": False, "openai_called": False,
+            }, indent=2, sort_keys=True))
+            return 0 if all(
+                item.mode == "image" and item.attachment_count in (None, 1)
+                for item in preview.leaderboards
+            ) else 1
+
+        if weekly_url is None:
+            raise DiscordError("The weekly webhook is required.")
 
         temporary_message = DiscordMessage(
             content=(
@@ -148,6 +187,9 @@ def main() -> int:
             )
         )
         return 0
+    except (DiscordError, PublishingError) as exc:
+        print(f"Discord smoke test failed: {exc}", file=sys.stderr)
+        return 1
     finally:
         connection.close()
         temporary.cleanup()

@@ -40,6 +40,7 @@ These standings are not an alternate calculation of the internal KCDK leaderboar
 - `src/kcdk/publishing.py`: Discord renderers, local message/publication state, idempotency, and weekly orchestration.
 - `src/kcdk/leaderboard_graphics.py`: isolated Pillow renderer, centralized visual configuration, font and authored-asset fallbacks, measured text truncation, and both PNG layouts.
 - `src/kcdk/leaderboard_preview.py`: network-free mock-season and presentation-data preview composition.
+- `src/kcdk/leaderboard_delivery.py`: image mode configuration, fresh PNG preparation/validation, and safe text fallback delivery.
 - `src/kcdk/cli.py`: normal command-line workflow available through `python -m kcdk weekly`.
 - `src/kcdk/members.py`: editable active/inactive member configuration.
 - `src/kcdk/config.py` and `src/kcdk/models.py`: portable project paths.
@@ -186,8 +187,8 @@ The ignored outputs are:
 - `output/preview/kcdk_standings_preview.png`
 - `output/preview/tournament_performance_preview.png`
 
-These PNGs are review-only. Discord continues to use the existing text/embed
-leaderboards as the production default until the image design is approved.
+These preview PNGs are review-only. Production Discord publishing renders fresh
+PNGs from the current database into `output/leaderboards/`, independently of previews.
 
 Open `notebooks/season_analysis.ipynb` in VS Code or Jupyter and run all cells. The notebook calls package code rather than duplicating business logic.
 
@@ -289,8 +290,61 @@ The normal publishing flow keeps importing, analytics, fact generation, OpenAI c
 
 The leaderboard webhook owns exactly two persistent messages:
 
-1. `KCDK SEASON STANDINGS`, ranked by average weekly KCDK finish and showing rank, member, average finish, wins, podiums, and weeks.
-2. `TOURNAMENT EARNINGS`, ranked by known winnings and then average DraftKings points, showing cashes and known/played prize weeks.
+1. `KCDK Season Standings`, ranked by average weekly KCDK finish.
+2. `KCDK Tournament Performance`, ranked by known winnings and then average DraftKings points.
+
+Image mode is the default. Every publishing run calculates current standings and
+independent rank movement from the database and uses the existing branded renderer:
+
+- `output/leaderboards/kcdk_standings.png`
+- `output/leaderboards/tournament_performance.png`
+
+Each message has one PNG plus its title and `Updated through Week N`. The full
+text/embed renderers remain available internally for fallback and debugging. Even
+when rerunning an older recap, persistent standings reflect the latest imported
+contest; the recap still describes the requested week. Generated PNGs and local
+Discord state remain ignored by Git.
+
+Centralized settings in `LeaderboardConfig` read these optional environment or
+ignored `.env` values (process environment takes precedence):
+
+```dotenv
+KCDK_LEADERBOARD_MODE=image
+KCDK_LEADERBOARD_MAX_FILE_BYTES=8388608
+```
+
+Set the mode to `text` to skip image rendering and use the existing embeds.
+The Windows runner uses this configuration automatically without another prompt.
+The 8 MiB default is a conservative local upload budget, not a universal Discord
+limit; Discord can reject a file below it. The application verifies the file exists,
+is nonempty, is a valid PNG, matches the renderer's expected dimensions, and fits
+the configured budget. Current default dimensions are 1400 pixels wide and
+`426 + 52 × row count` high for 1–20 rows. Oversized or invalid images immediately
+use text fallback without an image upload attempt. Render errors are reported by
+safe exception type. Validation snapshots the bytes to avoid uploading a later
+overwrite of the generated file.
+
+Branding uses `assets/branding/kcdk_logo.png` when present. Authored
+`assets/branding/leaderboard_header.png` is optional; missing/unreadable artwork
+uses the renderer's existing procedural fallback. Supplying a visual configuration
+with `header_artwork_opacity=0` disables header artwork while retaining the logo.
+
+The webhook client sends `payload_json` and `files[0]` as multipart form data for
+both create (`POST`, `wait=true`) and edit (`PATCH`). An image edit supplies
+`attachments: [{"id": 0, "filename": "…", "description": "…"}]`, listing only
+the new upload. These two application-owned messages intentionally retain no older
+attachments. Text fallback supplies `attachments: []`; mode changes also clear old
+content/embeds. This prevents attachment accumulation according to
+[Discord's webhook edit semantics](https://docs.discord.com/developers/resources/webhook#edit-webhook-message).
+
+If an image edit fails, the existing message ID stays intact and the publisher
+attempts one text/embed edit. A stale ID stops without creating a replacement.
+If both edits fail, publishing stops with a clear error and preserves state and
+the last content Discord accepted. For initial creation, an explicit payload
+rejection (HTTP 400/413/415/422) allows one text fallback create. An ambiguous
+timeout, 5xx response, or missing returned message ID is never followed by another
+create: inspect Discord and repair local state before rerunning if necessary.
+The weekly recap's posting and idempotency behavior is unchanged.
 
 Message IDs and published-week records are stored atomically in ignored local state at `data/processed/discord_state.json`. Webhook URLs are never stored there. The first live run creates each leaderboard message; later runs edit those IDs. A stale/deleted message ID causes a clear failure and no automatic replacement, preventing silent duplicate leaderboard spam. Remove or deliberately repair that state entry only after confirming the Discord message is truly gone.
 
@@ -312,7 +366,7 @@ python -m kcdk weekly `
   --dry-run
 ```
 
-The dry run performs the local idempotent CSV import, renders all three Discord payloads, reports whether the week is already published, and lists the create/edit/skip operations that would occur. It uses a deterministic fact preview rather than incurring an OpenAI charge. Add `--generate-commentary` only when a paid commentary request during dry run is deliberate. Remove `--dry-run` for live publishing. Use `--repost` to intentionally publish an already-recorded week again.
+The dry run performs the local idempotent CSV import, renders all three Discord payloads, reports whether the week is already published, and lists the create/edit/skip operations that would occur. It also renders fresh PNGs in image mode and reports each path, dimensions, byte size, selected image/text mode, fallback reason, and existing message ID to edit. Text fallback payloads are included only in local diagnostics. It never contacts Discord or changes Discord state, and uses a deterministic fact preview rather than incurring an OpenAI charge. Add `--generate-commentary` only when a paid commentary request during dry run is deliberate. Remove `--dry-run` for live publishing. Use `--repost` to intentionally publish an already-recorded week again.
 
 Discord content, embed, field, and combined embed limits are centralized and validated before transport. All outbound payloads disable mentions. Transport uses a finite timeout and no automatic retries because retrying a successful-but-ambiguous webhook request can create duplicates. Errors include only safe operation/status information and never webhook URLs.
 
@@ -321,9 +375,21 @@ An additional mock-only transport smoke test is available:
 ```powershell
 python scripts\smoke_discord.py
 python scripts\smoke_discord.py --live  # only after confirming both destinations are test-safe
+python scripts\smoke_discord.py --png-leaderboards  # PNG dry run, no network
+python scripts\smoke_discord.py --live --png-leaderboards
 ```
 
 The default command is network-free. The explicit live form creates and deletes one labeled weekly test message and creates or edits two labeled persistent test leaderboard messages using separate ignored smoke-test state. It never calls OpenAI.
+
+The `--live --png-leaderboards` form renders both current mock standings with the
+production renderer and updates only the two labeled smoke leaderboards. It never
+posts a weekly recap, never calls OpenAI, and requires only the leaderboard webhook.
+It reuses `data/processed/discord_smoke_state.json`, replaces previous attachments,
+and reports message IDs, chosen modes, image details, and attachment counts from
+Discord's response when available. Missing IDs are created once and saved; stale
+IDs follow the same stop-without-replacement policy as production. Text fallback
+or an unexpected returned attachment count makes the PNG smoke test exit nonzero.
+Live smoke tests are never run by pytest; test coverage uses mocked transport.
 
 ## Mock multi-week season
 
@@ -338,4 +404,4 @@ Before production use, validate the first real export's delimiter, encoding, hea
 1. Validate and adapt parsing and fact thresholds against the first real DraftKings export.
 2. Validate OpenAI commentary tone and prompt behavior with league feedback.
 3. Validate the full import/publish workflow against the first real weekly export.
-4. Review and approve the branded leaderboard PNGs before any Discord image integration.
+4. Verify the first real weekly image leaderboards and production message destinations.

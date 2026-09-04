@@ -606,6 +606,9 @@ def _success_summary(result: WeeklyWorkflowResult) -> str:
             f"{operations.get('tournament_leaderboard', 'unknown')}",
             f"Weekly recap: {operations.get('weekly_recap', 'unknown')}",
             f"Commentary source: {result.publication.commentary_source}",
+            *(f"{item.target}: {item.mode}"
+              + (f" ({item.reason})" if item.reason else "")
+              for item in result.publication.leaderboards),
         )
     )
 

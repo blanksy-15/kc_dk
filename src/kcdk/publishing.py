@@ -12,7 +12,7 @@ from typing import Any
 
 import pandas as pd
 
-from .analytics import season_leaderboard, tournament_performance_leaderboard
+from .analytics import season_leaderboard_with_movement, tournament_leaderboard_with_movement
 from .commentary import (
     CommentaryRoast,
     StructuredCommentary,
@@ -30,6 +30,9 @@ from .discord import (
     DiscordWebhookClient,
 )
 from .facts import WeeklyFactReport, build_weekly_fact_report
+from .leaderboard_delivery import (
+    LeaderboardConfig, PreparedLeaderboard, deliver_leaderboard, prepare_leaderboard,
+)
 from .persistence import ImportSummary, import_week, weekly_results
 
 
@@ -372,6 +375,7 @@ class WeeklyPublishResult:
     kcdk_leaderboard_message: DiscordMessage
     tournament_leaderboard_message: DiscordMessage
     weekly_message_ids: tuple[str, ...] = ()
+    leaderboards: tuple[PreparedLeaderboard, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -389,6 +393,8 @@ class WeeklyPublishResult:
                 "tournament_leaderboard": self.tournament_leaderboard_message.to_payload(),
             },
             "weekly_message_ids": list(self.weekly_message_ids),
+            "leaderboards": [item.to_dict() for item in self.leaderboards],
+            "text_fallbacks": {item.target: item.fallback.to_payload() for item in self.leaderboards},
         }
 
 
@@ -459,10 +465,12 @@ def publish_weekly_report(
     state_store: DiscordStateStore | None = None,
     discord_config: DiscordConfig | None = None,
     transport: DiscordTransport | None = None,
+    leaderboard_config: LeaderboardConfig | None = None,
 ) -> WeeklyPublishResult:
     """Refresh both leaderboards and idempotently publish a weekly recap."""
     store = state_store or DiscordStateStore()
     state = store.load()
+    image_config = leaderboard_config or LeaderboardConfig.from_env()
     contest_id = _contest_id_for_week(connection, season_identifier, week_label)
     report = build_weekly_fact_report(
         connection, season_identifier, contest_id, max_facts=8
@@ -502,17 +510,36 @@ def publish_weekly_report(
         commentary_source = "openai"
 
     week_results = weekly_results(connection, season_identifier, week_label)
-    kcdk = season_leaderboard(connection, season_identifier, contest_id)
-    tournament = tournament_performance_leaderboard(
-        connection, season_identifier, contest_id
-    )
+    # Persistent standings stay current even when an older weekly recap is rerun.
+    latest = connection.execute(
+        """SELECT c.id, c.week_label FROM contests c JOIN seasons s ON s.id = c.season_id
+        WHERE s.identifier = ?
+        ORDER BY COALESCE(c.week_number, 2147483647) DESC, c.contest_date DESC, c.id DESC""",
+        (season_identifier,),
+    ).fetchall()
+    through_week = str(latest[0]["week_label"])
+    kcdk = season_leaderboard_with_movement(connection, season_identifier)
+    tournament = tournament_leaderboard_with_movement(connection, season_identifier)
     weekly_message = render_weekly_recap(report, resolved_commentary, week_results)
     kcdk_message = render_kcdk_leaderboard(
-        kcdk, season_name=report.season_name, through_week=report.week_label
+        kcdk, season_name=report.season_name, through_week=through_week
     )
     tournament_message = render_tournament_leaderboard(
-        tournament, season_name=report.season_name, through_week=report.week_label
+        tournament, season_name=report.season_name, through_week=through_week
     )
+    prepared = tuple(
+        prepare_leaderboard(
+            target, frame, fallback, season_name=report.season_name,
+            through_week=through_week, weeks_completed=len(latest), config=image_config,
+            message_id=message_id,
+        )
+        for target, frame, fallback, message_id in (
+            ("kcdk_leaderboard", kcdk, kcdk_message, state.kcdk_leaderboard_message_id),
+            ("tournament_leaderboard", tournament, tournament_message,
+             state.tournament_leaderboard_message_id),
+        )
+    )
+    kcdk_message, tournament_message = (item.message for item in prepared)
     operations = _planned_operations(
         state, already_published=already_published, repost=repost
     )
@@ -531,6 +558,7 @@ def publish_weekly_report(
             kcdk_leaderboard_message=kcdk_message,
             tournament_leaderboard_message=tournament_message,
             weekly_message_ids=known_weekly_message_ids,
+            leaderboards=prepared,
         )
 
     config = resolved_discord_config
@@ -542,37 +570,17 @@ def publish_weekly_report(
         timeout_seconds=config.timeout_seconds
     )
 
-    try:
-        if state.kcdk_leaderboard_message_id:
-            client.edit_message(
-                config.leaderboard_webhook_url,
-                state.kcdk_leaderboard_message_id,
-                kcdk_message,
-            )
-        else:
-            state.kcdk_leaderboard_message_id = client.create_message(
-                config.leaderboard_webhook_url, kcdk_message
-            )
+    for item, attribute in zip(prepared, (
+        "kcdk_leaderboard_message_id", "tournament_leaderboard_message_id",
+    )):
+        try:
+            message_id = deliver_leaderboard(client, config.leaderboard_webhook_url, item)
+        except DiscordError as exc:
+            raise PublishingError(f"{item.target} update failed: {exc}") from exc
+        if getattr(state, attribute) != message_id:
+            setattr(state, attribute, message_id)
             _save_state(store, state)
-    except DiscordError as exc:
-        raise PublishingError(f"KCDK leaderboard update failed: {exc}") from exc
-
-    try:
-        if state.tournament_leaderboard_message_id:
-            client.edit_message(
-                config.leaderboard_webhook_url,
-                state.tournament_leaderboard_message_id,
-                tournament_message,
-            )
-        else:
-            state.tournament_leaderboard_message_id = client.create_message(
-                config.leaderboard_webhook_url, tournament_message
-            )
-            _save_state(store, state)
-    except DiscordError as exc:
-        raise PublishingError(
-            f"Tournament leaderboard update failed: {exc}"
-        ) from exc
+    kcdk_message, tournament_message = (item.message for item in prepared)
 
     weekly_message_ids = known_weekly_message_ids
     if should_publish_week:
@@ -602,6 +610,7 @@ def publish_weekly_report(
         kcdk_leaderboard_message=kcdk_message,
         tournament_leaderboard_message=tournament_message,
         weekly_message_ids=weekly_message_ids,
+        leaderboards=prepared,
     )
 
 

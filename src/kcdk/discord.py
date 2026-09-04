@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
+import math
 import os
 from pathlib import Path
 from typing import Any, Mapping, Protocol
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from dotenv import dotenv_values
 import httpx
@@ -54,6 +56,10 @@ class StaleDiscordMessageError(DiscordTransportError):
     """Raised when a persisted webhook message no longer exists."""
 
 
+class RejectedDiscordMessageError(DiscordTransportError):
+    """Discord explicitly rejected the payload without creating a message."""
+
+
 @dataclass(frozen=True)
 class DiscordConfig:
     weekly_webhook_url: str | None = field(default=None, repr=False)
@@ -61,7 +67,7 @@ class DiscordConfig:
     timeout_seconds: float = DEFAULT_DISCORD_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
-        if self.timeout_seconds <= 0:
+        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
             raise DiscordConfigurationError(
                 "DISCORD_TIMEOUT_SECONDS must be greater than zero."
             )
@@ -131,9 +137,18 @@ def _validate_webhook_url(url: str, setting_name: str) -> None:
 
 
 @dataclass(frozen=True)
+class DiscordAttachment:
+    filename: str
+    data: bytes = field(repr=False)
+    description: str = ""
+
+
+@dataclass(frozen=True)
 class DiscordMessage:
     content: str = ""
     embeds: tuple[dict[str, Any], ...] = ()
+    files: tuple[DiscordAttachment, ...] = ()
+    replace_attachments: bool = False
 
     def to_payload(self) -> dict[str, object]:
         validate_discord_message(self)
@@ -142,6 +157,13 @@ class DiscordMessage:
             payload["content"] = self.content
         if self.embeds:
             payload["embeds"] = [dict(embed) for embed in self.embeds]
+        if self.files or self.replace_attachments:
+            # These messages own their entire attachment set. Retain no old IDs.
+            payload["attachments"] = [
+                {"id": index, "filename": file.filename,
+                 "description": file.description}
+                for index, file in enumerate(self.files)
+            ]
         return payload
 
 
@@ -151,12 +173,17 @@ def _text_length(mapping: Mapping[str, Any], key: str) -> int:
 
 
 def validate_discord_message(message: DiscordMessage) -> None:
-    if not message.content and not message.embeds:
+    if not message.content and not message.embeds and not message.files:
         raise DiscordMessageError("A Discord message must have content or an embed.")
     if len(message.content) > DISCORD_CONTENT_LIMIT:
         raise DiscordMessageError("Discord message content exceeds 2000 characters.")
     if len(message.embeds) > DISCORD_EMBEDS_PER_MESSAGE:
         raise DiscordMessageError("A Discord message cannot contain more than 10 embeds.")
+    if len(message.files) > 10:
+        raise DiscordMessageError("A Discord message cannot contain more than 10 files.")
+    for file in message.files:
+        if not file.data or not file.filename or len(file.description) > 1024:
+            raise DiscordMessageError("Invalid Discord attachment data or metadata.")
 
     combined = 0
     for embed in message.embeds:
@@ -220,9 +247,10 @@ class DiscordWebhookClient:
     """Minimal no-retry client for incoming webhook messages."""
 
     def __init__(self, *, timeout_seconds: float = DEFAULT_DISCORD_TIMEOUT_SECONDS):
-        if timeout_seconds <= 0:
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise DiscordConfigurationError("Discord timeout must be positive.")
         self.timeout_seconds = timeout_seconds
+        self.attachment_counts: dict[str, int] = {}
 
     def _request(
         self,
@@ -230,13 +258,22 @@ class DiscordWebhookClient:
         url: str,
         *,
         payload: dict[str, object] | None = None,
+        files: tuple[DiscordAttachment, ...] = (),
         stale_on_404: bool = False,
     ) -> httpx.Response:
         try:
             with httpx.Client(
                 timeout=self.timeout_seconds, follow_redirects=False
             ) as client:
-                response = client.request(method, url, json=payload)
+                if files:
+                    response = client.request(
+                        method, url,
+                        data={"payload_json": json.dumps(payload)},
+                        files={f"files[{index}]": (file.filename, file.data, "image/png")
+                               for index, file in enumerate(files)},
+                    )
+                else:
+                    response = client.request(method, url, json=payload)
         except Exception as exc:
             raise DiscordTransportError(
                 f"Discord webhook request failed ({type(exc).__name__})."
@@ -245,53 +282,88 @@ class DiscordWebhookClient:
             raise StaleDiscordMessageError(
                 "The persisted Discord message no longer exists; no replacement was created."
             )
+        if response.status_code in (400, 413, 415, 422):
+            raise RejectedDiscordMessageError(
+                f"Discord rejected the message payload (HTTP {response.status_code})."
+            )
         if response.status_code >= 400:
             raise DiscordTransportError(
                 f"Discord webhook request failed (HTTP {response.status_code})."
             )
         return response
 
+    def _record_attachments(self, message_id: str, response: httpx.Response) -> None:
+        self.attachment_counts.pop(message_id, None)
+        try:
+            attachments = response.json().get("attachments")
+            if isinstance(attachments, list):
+                self.attachment_counts[message_id] = len(attachments)
+        except (AttributeError, ValueError, TypeError):
+            pass
+
     def create_message(self, webhook_url: str, message: DiscordMessage) -> str:
         _validate_webhook_url(webhook_url, "Discord webhook URL")
-        separator = "&" if "?" in webhook_url else "?"
         response = self._request(
             "POST",
-            f"{webhook_url}{separator}wait=true",
+            _message_url(webhook_url, wait=True),
             payload=message.to_payload(),
+            files=message.files,
         )
         try:
-            message_id = str(response.json()["id"])
-        except (ValueError, KeyError, TypeError) as exc:
+            raw_id = response.json()["id"]
+            message_id = str(raw_id) if isinstance(raw_id, (str, int)) else ""
+        except (ValueError, KeyError, TypeError):
             raise DiscordTransportError(
                 "Discord created a message but returned no usable message ID."
             ) from None
-        if not message_id:
+        if not message_id.isascii() or not message_id.isdecimal():
             raise DiscordTransportError(
                 "Discord created a message but returned no usable message ID."
             )
+        self._record_attachments(message_id, response)
         return message_id
 
     def edit_message(
         self, webhook_url: str, message_id: str, message: DiscordMessage
     ) -> None:
         _validate_webhook_url(webhook_url, "Discord webhook URL")
-        self._request(
+        payload = message.to_payload()
+        # Clear content/embeds left by a previous image or text mode.
+        payload.setdefault("content", "")
+        payload.setdefault("embeds", [])
+        response = self._request(
             "PATCH",
-            f"{webhook_url.rstrip('/')}/messages/{message_id}",
-            payload=message.to_payload(),
+            _message_url(webhook_url, message_id),
+            payload=payload,
+            files=message.files,
             stale_on_404=True,
         )
+        self._record_attachments(message_id, response)
 
     def delete_message(self, webhook_url: str, message_id: str) -> None:
         _validate_webhook_url(webhook_url, "Discord webhook URL")
         self._request(
             "DELETE",
-            f"{webhook_url.rstrip('/')}/messages/{message_id}",
+            _message_url(webhook_url, message_id),
             stale_on_404=True,
         )
 
 
+def _message_url(webhook_url: str, message_id: str | None = None, *, wait=False) -> str:
+    parsed = urlparse(webhook_url)
+    path = parsed.path.rstrip("/")
+    if message_id is not None:
+        if not message_id or not all(char.isalnum() or char in "-_" for char in message_id):
+            raise DiscordMessageError("Invalid persisted Discord message ID.")
+        path += f"/messages/{message_id}"
+    query = [(key, value) for key, value in parse_qsl(parsed.query) if key != "wait"]
+    if wait:
+        query.append(("wait", "true"))
+    return urlunparse(parsed._replace(path=path, query=urlencode(query), fragment=""))
+
+
 __all__ = [
+    "DiscordAttachment",
     "DISCORD_CONTENT_LIMIT",
     "DISCORD_EMBEDS_PER_MESSAGE",
     "DISCORD_EMBED_TITLE_LIMIT",
@@ -309,5 +381,6 @@ __all__ = [
     "DiscordTransportError",
     "DiscordWebhookClient",
     "StaleDiscordMessageError",
+    "RejectedDiscordMessageError",
     "validate_discord_message",
 ]

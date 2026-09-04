@@ -355,6 +355,7 @@ def test_confirmed_live_run_invokes_pipeline_once(tmp_path, monkeypatch):
                 SimpleNamespace(target="weekly_recap", action="create"),
             ),
             commentary_source="openai",
+            leaderboards=(),
         ),
     )
     monkeypatch.setattr(
