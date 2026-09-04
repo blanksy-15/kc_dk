@@ -284,6 +284,138 @@ result = generate_weekly_commentary(
 
 Only context for members appearing in selected facts is sent. Commentary notes are whitespace-cleaned and length-limited; callers are responsible for supplying only non-sensitive, fantasy-relevant notes. `render_discord_markdown` formats validated output, hides internal fact IDs by default, and neutralizes mass mentions. Fact IDs remain in the structured response and can be included only through its explicit debug option. `chunk_discord_markdown` splits text below Discord's 2,000-character message limit. Neither function posts anything.
 
+## Commissioner and occasional Drunk Bot
+
+The Commissioner remains the informative weekly voice, using its existing
+`mild`/`normal`/`ruthless` prompt, structured output, and fact-ID checks. Drunk Bot
+is a separate, scarce interruption: sharper, profane fantasy-football jokes in
+one short message, only when Python finds strong existing facts. It never decides
+what happened or whether a week qualifies.
+
+The layers are separate: `facts.py` → `drunk_bot.py` eligibility →
+`drunk_bot_prompt.py` (prompt version `1`) → `drunk_bot_commentary.py` structured
+generation → `drunk_bot_publishing.py` state/delivery. The Commissioner prompt is
+unchanged. Both use the configured OpenAI Responses provider/model; optional
+`DRUNK_BOT_OPENAI_MODEL` overrides only the second persona. Structured generation
+uses a strict JSON schema, following the
+[OpenAI structured output documentation](https://developers.openai.com/api/docs/guides/structured-outputs).
+
+`DrunkBotConfig` defaults:
+
+| Setting | Default |
+| --- | --- |
+| `enabled` | `true` |
+| `minimum_fact_priority` | `90` |
+| `minimum_streak_length` | `3` |
+| `maximum_interjections_per_week` | `2` (configurable 1–2) |
+| `maximum_members_targeted` | `2` (configurable 1–3) |
+| `minimum_number_of_eligible_facts` | `1` (configurable 1–3) |
+| `allow_profanity` | `true` |
+| `default_tone` | `ruthless` (`normal` also supported) |
+
+Environment/ignored `.env` overrides use `DRUNK_BOT_` plus the uppercase field
+name, for example `DRUNK_BOT_MINIMUM_FACT_PRIORITY=95`. Set
+`DRUNK_BOT_ENABLED=false` to disable it. Existing local runner configuration loads
+with `drunk_bot_enabled: true` by default; add `"drunk_bot_enabled": false` to
+`data/processed/local_config.json` to disable it there. Either switch can disable
+the persona. No extra weekly prompt is added. Preflight computes eligibility from
+a disposable database copy that includes the selected CSV, and shows its score
+and trigger before live confirmation.
+
+Eligibility examines the existing candidate facts, independently of the
+Commissioner's shortlist. Every selected fact must meet the priority threshold
+and a negative-event rule: sustained last-place/decline/known-zero streaks,
+head-to-head losses, a newly set season-low score, or several known weeks with
+zero winnings. Additional rules support large margins, close non-tied finishes,
+large score declines, and repeated poor player outcomes when their existing fact
+priority clears the configured gate. Their additional thresholds are
+`large_margin_points=40`, `close_margin_points=0.5`, and
+`poor_average_finish=5`. The default priority gate intentionally excludes many
+milder fact types; positive records and routine winners cannot qualify merely by
+having high priority.
+
+The eligibility score is the highest qualifying fact's existing priority, with
+stable ordering and no randomness. Selection prefers one strongest fact per
+target, up to three facts overall. A second distinct fact for the same person is
+used only to satisfy an explicitly configured minimum evidence count. Head-to-head
+facts target the losing member. The four-week mock season selects Taylor Quinn's
+four consecutive last-place finishes at score **98**. A new season-low score also
+qualifies at **96**, but does not crowd out that stronger fact for the same person.
+
+The prompt permits clever profanity and rhetorical exaggeration while forbidding
+invented scores, ranks, selections, winnings, streaks, entry fees/net losses,
+causality, personal-life attacks, protected-group slurs, threats, and sexual
+humiliation. Missing prize data never becomes zero. Structured parsing enforces
+existing fact IDs, the supported target for each ID, non-repeated evidence,
+member/interjection limits, and a 600-character cap per interjection. IDs remain
+in local state and diagnostics, never in Discord text. These checks validate
+structure and references; the prompt supplies the factual prose constraints.
+
+Configure the optional separate identity with `DISCORD_DRUNK_WEBHOOK_URL=` in
+the ignored `.env`. It can be a distinct webhook in the same weekly channel.
+If absent, the Commissioner and leaderboards work normally and Drunk Bot reports
+`missing_webhook`; no unnecessary persona generation is purchased. Disabled or
+ineligible weeks make zero Drunk Bot API calls. Eligible live publishing makes
+one persona request with SDK retries disabled and records its usage separately
+from Commissioner usage. Persona API/post failures are nonfatal to the rest of
+the workflow.
+
+Network posting order is **Commissioner recap → optional single Drunk Bot message
+→ both persistent leaderboard updates**. The two voices are never combined.
+Drunk Bot uses simple prose and disabled mentions, with identity supplied by its
+webhook rather than a large embed or internal label.
+
+State version 2 adds `drunk_bot_weeks` alongside the existing Commissioner
+`published_weeks`. Version 1 files load without losing any IDs or recap records.
+States distinguish disabled, not eligible, missing destination, generation
+failure, ready, posting, rejected/uncertain post, and posted. Generated output,
+fact references, request/version/model, usage, and confirmed message ID are saved
+locally; credentials are never saved. Intent is saved before a network post.
+Ordinary reruns never regenerate/repost the persona, and `--repost` applies only
+to the Commissioner. Existing historical recap records do not cause a new persona
+message to be retroactively posted on an ordinary rerun.
+
+For explicit recovery, rerun the usual `python -m kcdk weekly ...` command with
+`--recover-drunk-bot` and **without** `--repost`. The Commissioner must already
+have posted. Missing-destination/generation failures can then be retried, and
+definitely rejected posts reuse the saved generation without another paid call.
+A timeout, 5xx, missing message ID, or interrupted `posting` state may represent a
+successful Discord post. These require reconciliation first: inspect Discord,
+then set that record's `message_id` and `status: "posted"` if found; only if it is
+confirmed absent, set `status: "post_failed"` before explicit recovery. Automatic
+recovery never risks a duplicate after an ambiguous response.
+
+Weekly `--dry-run` reports enabled/eligible status, score, selected fact IDs,
+trigger count, and whether generation/posting would occur given the destination
+and publication state. It never makes the Drunk Bot request or alters state.
+`--generate-commentary` retains its existing Commissioner-only meaning.
+
+Free mock eligibility and exact persona payload preview:
+
+```powershell
+python scripts\smoke_drunk_bot.py
+```
+
+Deliberately make **one paid generation**, saving its structured result to ignored
+`output/preview/drunk_bot_generation.json`, without contacting Discord:
+
+```powershell
+python scripts\smoke_drunk_bot.py --live
+```
+
+After reviewing the saved prose, deliberately post it once through the Drunk Bot
+webhook, with **no OpenAI generation**:
+
+```powershell
+python scripts\smoke_drunk_bot.py --post
+```
+
+`--generation PATH` chooses the output/input file. Posting uses separate ignored
+`data/processed/drunk_bot_smoke_state.json`, labels the message `[SMOKE TEST]`, and
+does not post a Commissioner recap or touch leaderboards. Repeated smoke posts
+are suppressed; `--recover` permits a definitely rejected smoke post to retry.
+The `--live` and `--post` options are mutually exclusive. Tests mock all live calls.
+
 ## Discord weekly publishing
 
 The normal publishing flow keeps importing, analytics, fact generation, OpenAI commentary, Discord rendering, webhook transport, and local publication state separate. The weekly-results webhook receives one new recap containing the week label, Commissioner Report, compact internal results, tournament rank/earnings highlights, and completeness notes only when relevant. Normal public output never includes internal fact IDs.

@@ -30,6 +30,10 @@ from .discord import (
     DiscordWebhookClient,
 )
 from .facts import WeeklyFactReport, build_weekly_fact_report
+from .drunk_bot import DrunkBotConfig
+from .drunk_bot_publishing import (
+    DrunkBotPlan, DrunkBotRecord, plan_drunk_bot, publish_drunk_bot,
+)
 from .leaderboard_delivery import (
     LeaderboardConfig, PreparedLeaderboard, deliver_leaderboard, prepare_leaderboard,
 )
@@ -37,7 +41,7 @@ from .persistence import ImportSummary, import_week, weekly_results
 
 
 DEFAULT_DISCORD_STATE_PATH = Path("data/processed/discord_state.json")
-STATE_VERSION = 1
+STATE_VERSION = 2
 KCDK_COLOR = 0x2E8B57
 TOURNAMENT_COLOR = 0xD4AF37
 WEEKLY_COLOR = 0x5865F2
@@ -52,11 +56,13 @@ class PublishingError(RuntimeError):
 class PublicationRecord:
     message_ids: tuple[str, ...]
     published_at: str
+    usage: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
             "message_ids": list(self.message_ids),
             "published_at": self.published_at,
+            "usage": self.usage,
         }
 
 
@@ -65,6 +71,7 @@ class DiscordState:
     kcdk_leaderboard_message_id: str | None = None
     tournament_leaderboard_message_id: str | None = None
     published_weeks: dict[str, PublicationRecord] = field(default_factory=dict)
+    drunk_bot_weeks: dict[str, DrunkBotRecord] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -77,11 +84,12 @@ class DiscordState:
                 key: value.to_dict()
                 for key, value in sorted(self.published_weeks.items())
             },
+            "drunk_bot_weeks": {key: value.to_dict() for key, value in sorted(self.drunk_bot_weeks.items())},
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "DiscordState":
-        if payload.get("version") != STATE_VERSION:
+        if payload.get("version") not in (1, STATE_VERSION):
             raise PublishingError("Discord state has an unsupported version.")
         leaderboards = payload.get("leaderboards", {})
         publications = payload.get("published_weeks", {})
@@ -99,7 +107,17 @@ class DiscordState:
                 or not isinstance(published_at, str)
             ):
                 raise PublishingError("Discord publication state is malformed.")
-            parsed[str(key)] = PublicationRecord(tuple(message_ids), published_at)
+            usage = value.get("usage", {})
+            if not isinstance(usage, dict):
+                raise PublishingError("Commissioner usage state is malformed.")
+            parsed[str(key)] = PublicationRecord(tuple(message_ids), published_at, usage)
+        drunk_records = payload.get("drunk_bot_weeks", {})
+        if not isinstance(drunk_records, dict):
+            raise PublishingError("Drunk Bot publication state is malformed.")
+        try:
+            drunk_records = {str(key): DrunkBotRecord.from_dict(value) for key, value in drunk_records.items()}
+        except (ValueError, TypeError):
+            raise PublishingError("Drunk Bot publication state is malformed.") from None
         return cls(
             kcdk_leaderboard_message_id=_optional_id(
                 leaderboards.get("kcdk_message_id")
@@ -108,6 +126,7 @@ class DiscordState:
                 leaderboards.get("tournament_message_id")
             ),
             published_weeks=parsed,
+            drunk_bot_weeks=drunk_records,
         )
 
 
@@ -376,6 +395,8 @@ class WeeklyPublishResult:
     tournament_leaderboard_message: DiscordMessage
     weekly_message_ids: tuple[str, ...] = ()
     leaderboards: tuple[PreparedLeaderboard, ...] = ()
+    drunk_bot: DrunkBotPlan | None = None
+    commissioner_usage: dict[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -395,6 +416,8 @@ class WeeklyPublishResult:
             "weekly_message_ids": list(self.weekly_message_ids),
             "leaderboards": [item.to_dict() for item in self.leaderboards],
             "text_fallbacks": {item.target: item.fallback.to_payload() for item in self.leaderboards},
+            "drunk_bot": self.drunk_bot.to_dict() if self.drunk_bot else None,
+            "commissioner_usage": self.commissioner_usage,
         }
 
 
@@ -466,25 +489,29 @@ def publish_weekly_report(
     discord_config: DiscordConfig | None = None,
     transport: DiscordTransport | None = None,
     leaderboard_config: LeaderboardConfig | None = None,
+    drunk_bot_config: DrunkBotConfig | None = None,
+    recover_drunk_bot: bool = False,
 ) -> WeeklyPublishResult:
     """Refresh both leaderboards and idempotently publish a weekly recap."""
     store = state_store or DiscordStateStore()
     state = store.load()
     image_config = leaderboard_config or LeaderboardConfig.from_env()
+    persona_config = drunk_bot_config or DrunkBotConfig.from_env()
     contest_id = _contest_id_for_week(connection, season_identifier, week_label)
     report = build_weekly_fact_report(
         connection, season_identifier, contest_id, max_facts=8
     )
     key = _publication_key(season_identifier, contest_id)
     already_published = key in state.published_weeks
+    if recover_drunk_bot and (not already_published or repost):
+        raise PublishingError("Drunk Bot recovery requires an existing Commissioner recap and no --repost.")
     should_publish_week = not already_published or repost
     known_weekly_message_ids = (
         state.published_weeks[key].message_ids if already_published else ()
     )
 
-    resolved_discord_config: DiscordConfig | None = None
+    resolved_discord_config = discord_config or DiscordConfig.from_env(require_webhooks=not dry_run)
     if not dry_run:
-        resolved_discord_config = discord_config or DiscordConfig.from_env()
         if (
             resolved_discord_config.weekly_webhook_url is None
             or resolved_discord_config.leaderboard_webhook_url is None
@@ -492,6 +519,14 @@ def publish_weekly_report(
             raise PublishingError(
                 "Both Discord webhooks are required for live publishing."
             )
+
+    drunk_plan = plan_drunk_bot(
+        report, persona_config,
+        destination_available=bool(resolved_discord_config.drunk_webhook_url),
+        record=state.drunk_bot_weeks.get(key),
+        commissioner_already_posted=already_published, recover=recover_drunk_bot,
+    )
+    commissioner_usage = state.published_weeks[key].usage if already_published else {}
 
     if commentary is not None:
         resolved_commentary = commentary
@@ -508,6 +543,7 @@ def publish_weekly_report(
             raise PublishingError("OpenAI returned no commentary for publication.")
         resolved_commentary = generation.commentary
         commentary_source = "openai"
+        commissioner_usage = generation.usage.to_dict()
 
     week_results = weekly_results(connection, season_identifier, week_label)
     # Persistent standings stay current even when an older weekly recap is rerun.
@@ -543,6 +579,11 @@ def publish_weekly_report(
     operations = _planned_operations(
         state, already_published=already_published, repost=repost
     )
+    operations = (
+        operations[2],
+        DiscordOperation("drunk_bot", "create" if drunk_plan.would_post_to_discord else "skip", drunk_plan.status),
+        *operations[:2],
+    )
 
     if dry_run:
         return WeeklyPublishResult(
@@ -559,6 +600,8 @@ def publish_weekly_report(
             tournament_leaderboard_message=tournament_message,
             weekly_message_ids=known_weekly_message_ids,
             leaderboards=prepared,
+            drunk_bot=drunk_plan,
+            commissioner_usage=commissioner_usage,
         )
 
     config = resolved_discord_config
@@ -569,18 +612,6 @@ def publish_weekly_report(
     client = transport or DiscordWebhookClient(
         timeout_seconds=config.timeout_seconds
     )
-
-    for item, attribute in zip(prepared, (
-        "kcdk_leaderboard_message_id", "tournament_leaderboard_message_id",
-    )):
-        try:
-            message_id = deliver_leaderboard(client, config.leaderboard_webhook_url, item)
-        except DiscordError as exc:
-            raise PublishingError(f"{item.target} update failed: {exc}") from exc
-        if getattr(state, attribute) != message_id:
-            setattr(state, attribute, message_id)
-            _save_state(store, state)
-    kcdk_message, tournament_message = (item.message for item in prepared)
 
     weekly_message_ids = known_weekly_message_ids
     if should_publish_week:
@@ -594,8 +625,29 @@ def publish_weekly_report(
         state.published_weeks[key] = PublicationRecord(
             message_ids=weekly_message_ids,
             published_at=datetime.now(UTC).isoformat(timespec="seconds"),
+            usage=commissioner_usage,
         )
         _save_state(store, state)
+
+    def save_drunk_record(record: DrunkBotRecord) -> None:
+        state.drunk_bot_weeks[key] = record
+        _save_state(store, state)
+
+    drunk_plan = publish_drunk_bot(
+        report, persona_config, drunk_plan, record=state.drunk_bot_weeks.get(key),
+        webhook_url=config.drunk_webhook_url, client=client, save=save_drunk_record,
+    )
+    for item, attribute in zip(prepared, (
+        "kcdk_leaderboard_message_id", "tournament_leaderboard_message_id",
+    )):
+        try:
+            message_id = deliver_leaderboard(client, config.leaderboard_webhook_url, item)
+        except DiscordError as exc:
+            raise PublishingError(f"{item.target} update failed: {exc}") from exc
+        if getattr(state, attribute) != message_id:
+            setattr(state, attribute, message_id)
+            _save_state(store, state)
+    kcdk_message, tournament_message = (item.message for item in prepared)
 
     return WeeklyPublishResult(
         season_identifier=season_identifier,
@@ -611,6 +663,8 @@ def publish_weekly_report(
         tournament_leaderboard_message=tournament_message,
         weekly_message_ids=weekly_message_ids,
         leaderboards=prepared,
+        drunk_bot=drunk_plan,
+        commissioner_usage=commissioner_usage,
     )
 
 
@@ -643,6 +697,8 @@ def run_weekly_workflow(
     repost: bool = False,
     generate_commentary_in_dry_run: bool = False,
     state_store: DiscordStateStore | None = None,
+    drunk_bot_config: DrunkBotConfig | None = None,
+    recover_drunk_bot: bool = False,
 ) -> WeeklyWorkflowResult:
     """Import one CSV, then render or publish the complete weekly package."""
     summary = import_week(
@@ -666,6 +722,8 @@ def run_weekly_workflow(
         repost=repost,
         generate_commentary_in_dry_run=generate_commentary_in_dry_run,
         state_store=state_store,
+        drunk_bot_config=drunk_bot_config,
+        recover_drunk_bot=recover_drunk_bot,
     )
     return WeeklyWorkflowResult(summary, publication)
 

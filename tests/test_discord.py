@@ -290,17 +290,16 @@ def test_weekly_dry_run_renders_all_sections_without_transport(
     serialized = json.dumps(payload)
 
     assert result.commentary_source == "deterministic_preview"
-    assert [item.action for item in result.operations] == [
-        "create",
-        "create",
-        "create",
+    assert [item.target for item in result.operations] == [
+        "weekly_recap", "drunk_bot", "kcdk_leaderboard", "tournament_leaderboard",
     ]
+    assert all(item.action == "create" for item in result.operations if item.target != "drunk_bot")
     assert "Weekly KCDK results" in serialized
     assert "Tournament results / earnings" in serialized
     assert "KCDK SEASON STANDINGS" in serialized
     assert "TOURNAMENT EARNINGS" in serialized
-    assert "fact_" not in serialized
-    assert "webhook" not in serialized.lower()
+    assert "fact_" not in json.dumps(payload["rendered"])
+    assert "api/webhooks/" not in serialized.lower()
     assert transport.created == []
     assert transport.edited == []
 
@@ -336,11 +335,11 @@ def test_initial_leaderboard_creation_and_publication_state(
     state = store.load()
 
     assert len(transport.created) == 3
-    assert state.kcdk_leaderboard_message_id == "message-1"
-    assert state.tournament_leaderboard_message_id == "message-2"
+    assert state.kcdk_leaderboard_message_id == "message-2"
+    assert state.tournament_leaderboard_message_id == "message-3"
     assert result.publication_key in state.published_weeks
     assert state.published_weeks[result.publication_key].message_ids == (
-        "message-3",
+        "message-1",
     )
     state_text = (tmp_path / "state.json").read_text(encoding="utf-8")
     assert "api/webhooks" not in state_text
@@ -374,7 +373,7 @@ def test_subsequent_run_edits_leaderboards_and_skips_weekly_recap(
     assert result.already_published is True
     assert len(second_transport.edited) == 2
     assert second_transport.created == []
-    assert result.operations[-1].action == "skip"
+    assert result.operations[0].action == "skip"
 
 
 def test_explicit_repost_edits_leaderboards_and_creates_one_recap(
@@ -404,7 +403,7 @@ def test_explicit_repost_edits_leaderboards_and_creates_one_recap(
 
     assert len(transport.edited) == 2
     assert len(transport.created) == 1
-    assert result.operations[-1].reason == "explicit repost requested"
+    assert result.operations[0].reason == "explicit repost requested"
     assert len(store.load().published_weeks[result.publication_key].message_ids) == 2
 
 
@@ -430,7 +429,8 @@ def test_stale_leaderboard_message_fails_without_creating_duplicate(
             discord_config=_discord_config(),
             transport=transport,
         )
-    assert transport.created == []
+    assert len(transport.created) == 1  # Commissioner posts before leaderboard edits.
+    assert transport.created[0][0] == VALID_WEEKLY_URL
     assert store.load().kcdk_leaderboard_message_id == "deleted-message"
 
 
@@ -438,7 +438,7 @@ def test_weekly_failure_does_not_mark_publication_successful(
     season_db, commentary, tmp_path
 ):
     store = DiscordStateStore(tmp_path / "state.json")
-    transport = FakeTransport(fail_on_create_number=3)
+    transport = FakeTransport(fail_on_create_number=1)
 
     with pytest.raises(PublishingError, match="Weekly recap publish failed"):
         publish_weekly_report(
@@ -473,7 +473,7 @@ def test_existing_publication_dry_run_reports_skip(season_db, tmp_path):
         state_store=store,
     )
     assert result.already_published is True
-    assert result.operations[-1].action == "skip"
+    assert result.operations[0].action == "skip"
     assert result.weekly_message_ids == ("weekly-existing",)
 
 

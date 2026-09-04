@@ -53,6 +53,10 @@ def _weekly_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Explicitly post a weekly recap even if state says it was published.",
     )
     parser.set_defaults(handler=_run_weekly)
+    parser.add_argument(
+        "--recover-drunk-bot", action="store_true",
+        help="Explicitly recover an unposted Drunk Bot message without reposting the Commissioner.",
+    )
 
 
 def _weekly_runner_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -117,6 +121,7 @@ def _run_weekly(arguments: argparse.Namespace) -> int:
             repost=arguments.repost,
             generate_commentary_in_dry_run=arguments.generate_commentary,
             state_store=DiscordStateStore(arguments.state),
+            recover_drunk_bot=arguments.recover_drunk_bot,
         )
     finally:
         connection.close()

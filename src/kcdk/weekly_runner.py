@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 import os
@@ -22,7 +22,9 @@ from .dk_import import (
     weekly_standings,
 )
 from .members import load_members
-from .persistence import connect_database
+from .persistence import connect_database, initialize_database, import_week
+from .facts import build_weekly_fact_report
+from .drunk_bot import DrunkBotConfig, DrunkBotEligibility, select_drunk_bot_facts
 from .publishing import (
     DEFAULT_DISCORD_STATE_PATH,
     DiscordStateStore,
@@ -52,8 +54,11 @@ class LocalWeeklyConfig:
     season_year: int | None = None
     database_path: str = str(DEFAULT_DATABASE_PATH)
     state_path: str = str(DEFAULT_DISCORD_STATE_PATH)
+    drunk_bot_enabled: bool = True
 
     def __post_init__(self) -> None:
+        if type(self.drunk_bot_enabled) is not bool:
+            raise WeeklyRunnerError("drunk_bot_enabled must be true or false.")
         text_fields = {
             "season_identifier": self.season_identifier,
             "season_name": self.season_name,
@@ -96,6 +101,7 @@ class LocalWeeklyConfig:
             "season_year",
             "database_path",
             "state_path",
+            "drunk_bot_enabled",
         }
         unknown = sorted(set(payload) - allowed)
         if unknown:
@@ -186,6 +192,7 @@ class WeeklyPreflight:
     configured_model: str | None
     blocking_errors: tuple[str, ...]
     warnings: tuple[str, ...]
+    drunk_bot: DrunkBotEligibility | None = None
 
     @property
     def can_continue(self) -> bool:
@@ -219,6 +226,13 @@ class WeeklyPreflight:
         ]
         if self.configured_model:
             lines.append(f"OpenAI model: {self.configured_model}")
+        if self.drunk_bot:
+            lines.append(
+                f"Drunk Bot: enabled={'yes' if self.drunk_bot.enabled else 'no'}, "
+                f"eligible={'yes' if self.drunk_bot.eligible else 'no'}, "
+                f"score={self.drunk_bot.score}, facts={len(self.drunk_bot.selected_facts)}"
+            )
+            lines.append(f"  {self.drunk_bot.reason}")
         lines.append("Standings preview:")
         if self.standings:
             lines.extend(
@@ -502,6 +516,13 @@ def build_preflight(
             "Live credentials were not required or used by this dry run."
         )
 
+    drunk_eligibility = None
+    if not errors:
+        try:
+            drunk_eligibility = _preview_drunk_bot(source, config, week_number)
+        except (ValueError, OSError, sqlite3.Error, PublishingError) as exc:
+            errors.append(f"Drunk Bot preflight failed ({type(exc).__name__}).")
+
     return WeeklyPreflight(
         csv_path=source,
         season_identifier=config.season_identifier,
@@ -516,6 +537,7 @@ def build_preflight(
         configured_model=model,
         blocking_errors=tuple(errors),
         warnings=tuple(warnings),
+        drunk_bot=drunk_eligibility,
         **metrics,
     )
 
@@ -564,6 +586,41 @@ def _copy_database_for_dry_run(source: Path, destination: Path) -> None:
         read_connection.close()
 
 
+def _persona_config(config: LocalWeeklyConfig) -> DrunkBotConfig:
+    settings = DrunkBotConfig.from_env()
+    # Either the local switch or environment can disable the persona.
+    return replace(settings, enabled=settings.enabled and config.drunk_bot_enabled)
+
+
+def _preview_drunk_bot(source: Path, config: LocalWeeklyConfig, week_number: int) -> DrunkBotEligibility:
+    """Import only into a disposable copy; never open production for writing."""
+    settings = _persona_config(config)
+    if not settings.enabled:
+        return DrunkBotEligibility(False, False, 0, "disabled")
+    with tempfile.TemporaryDirectory(prefix="kcdk-persona-preflight-") as temporary:
+        database = Path(temporary) / "preview.sqlite"
+        _copy_database_for_dry_run(Path(config.database_path), database)
+        connection = sqlite3.connect(database)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        try:
+            initialize_database(connection)
+            import_week(
+                connection, source, config.members_path, season_name=config.season_name,
+                season_identifier=config.season_identifier, season_year=config.season_year,
+                week_number=week_number, week_label=f"Week {week_number}",
+            )
+            row = connection.execute(
+                """SELECT c.id FROM contests c JOIN seasons s ON s.id = c.season_id
+                WHERE s.identifier = ? AND c.week_label = ?""",
+                (config.season_identifier, f"Week {week_number}"),
+            ).fetchone()
+            report = build_weekly_fact_report(connection, config.season_identifier, int(row[0]))
+            return select_drunk_bot_facts(report, settings)
+        finally:
+            connection.close()
+
+
 def run_dry_run(
     *, csv_path: Path, config: LocalWeeklyConfig, week_number: int
 ) -> WeeklyWorkflowResult:
@@ -585,6 +642,7 @@ def run_dry_run(
                 tone=config.default_tone,
                 dry_run=True,
                 state_store=DiscordStateStore(config.state_path),
+                drunk_bot_config=_persona_config(config),
             )
         finally:
             connection.close()
@@ -606,6 +664,9 @@ def _success_summary(result: WeeklyWorkflowResult) -> str:
             f"{operations.get('tournament_leaderboard', 'unknown')}",
             f"Weekly recap: {operations.get('weekly_recap', 'unknown')}",
             f"Commentary source: {result.publication.commentary_source}",
+            f"Drunk Bot: {result.publication.drunk_bot.status if result.publication.drunk_bot else 'not planned'}",
+            *((f"Drunk Bot detail: {result.publication.drunk_bot.error}",)
+              if result.publication.drunk_bot and result.publication.drunk_bot.error else ()),
             *(f"{item.target}: {item.mode}"
               + (f" ({item.reason})" if item.reason else "")
               for item in result.publication.leaderboards),
@@ -684,6 +745,7 @@ def run_interactive_weekly(
             dry_run=False,
             repost=repost,
             state_store=DiscordStateStore(config.state_path),
+            drunk_bot_config=_persona_config(config),
         )
     finally:
         connection.close()

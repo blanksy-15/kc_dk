@@ -356,6 +356,7 @@ def test_confirmed_live_run_invokes_pipeline_once(tmp_path, monkeypatch):
             ),
             commentary_source="openai",
             leaderboards=(),
+            drunk_bot=None,
         ),
     )
     monkeypatch.setattr(

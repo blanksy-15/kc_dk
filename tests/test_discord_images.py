@@ -101,7 +101,7 @@ def test_dry_run_reports_pngs_ids_and_never_uses_network(season_db, tmp_path, mo
     before = store.path.read_bytes()
     result = preview(season_db, tmp_path).to_dict()
     assert [item["message_id"] for item in result["leaderboards"]] == ["10", "20"]
-    assert [item["action"] for item in result["operations"][:2]] == ["edit", "edit"]
+    assert [item["action"] for item in result["operations"][2:]] == ["edit", "edit"]
     for item in result["leaderboards"]:
         assert item["rendering_attempted"] is True
         assert item["dimensions"] == [1400, 686]
@@ -175,9 +175,9 @@ def test_initial_image_create_and_repeated_edits_preserve_ids(season_db, comment
         )
     assert len(client.created) == 3  # two boards and one recap only
     assert len(client.edited) == 4
-    assert [item.message_id for item in result.leaderboards] == ["message-1", "message-2"]
-    assert all(message.files for _, message, _ in client.created[:2])
-    assert not client.created[2][1].files
+    assert [item.message_id for item in result.leaderboards] == ["message-2", "message-3"]
+    assert all(message.files for _, message, _ in client.created[1:])
+    assert not client.created[0][1].files
     for _, _, message in client.edited:
         assert len(message.to_payload()["attachments"]) == 1
         assert message.to_payload()["attachments"][0]["id"] == 0
@@ -204,7 +204,8 @@ def test_image_edit_fallback_once_preserves_state(season_db, commentary, tmp_pat
         with pytest.raises(PublishingError, match="text fallback failed"):
             publish_weekly_report(season_db, **kwargs)
         assert len(client.edited) == 2
-        assert not client.created
+        assert len(client.created) == 1  # Commissioner already posted.
+        assert not client.created[0][1].files
     else:
         result = publish_weekly_report(season_db, **kwargs)
         assert len(client.edited) == 4
