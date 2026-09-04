@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Environment and secrets
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local VS Code settings
+.vscode/
+
+# Local data and generated output
+data/members.csv
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+output/*
+!output/.gitkeep
+
+# Mock fixtures and members.example.csv are tracked
