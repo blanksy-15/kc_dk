@@ -11,6 +11,7 @@ from .commentary import CommentaryError
 from .discord import DiscordError
 from .persistence import connect_database
 from .publishing import DiscordStateStore, PublishingError, run_weekly_workflow
+from .weekly_runner import WeeklyRunnerError, run_interactive_weekly
 
 
 def _weekly_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -53,6 +54,35 @@ def _weekly_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(handler=_run_weekly)
 
 
+def _weekly_runner_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "weekly-runner", help="Safely preflight and interactively publish one week."
+    )
+    parser.add_argument(
+        "--csv",
+        type=Path,
+        help="DraftKings CSV path; omit to use the Windows file picker.",
+    )
+    parser.add_argument("--week-number", type=int)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("data/processed/local_config.json"),
+        help="Ignored non-secret local defaults file.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview using a temporary database; never contact OpenAI or Discord.",
+    )
+    parser.add_argument(
+        "--repost",
+        action="store_true",
+        help="Allow the confirmation flow to repost an already-published recap.",
+    )
+    parser.set_defaults(handler=_run_weekly_runner)
+
+
 def _run_weekly(arguments: argparse.Namespace) -> int:
     connection = connect_database(arguments.database)
     try:
@@ -79,10 +109,22 @@ def _run_weekly(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _run_weekly_runner(arguments: argparse.Namespace) -> int:
+    result = run_interactive_weekly(
+        csv_path=arguments.csv,
+        week_number=arguments.week_number,
+        config_path=arguments.config,
+        dry_run=arguments.dry_run,
+        repost=arguments.repost,
+    )
+    return 1 if result.status == "blocked" else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m kcdk")
     subparsers = parser.add_subparsers(dest="command", required=True)
     _weekly_parser(subparsers)
+    _weekly_runner_parser(subparsers)
     return parser
 
 
@@ -91,7 +133,14 @@ def main(argv: list[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
     try:
         return int(arguments.handler(arguments))
-    except (PublishingError, CommentaryError, DiscordError, ValueError, OSError) as exc:
+    except (
+        PublishingError,
+        CommentaryError,
+        DiscordError,
+        WeeklyRunnerError,
+        ValueError,
+        OSError,
+    ) as exc:
         print(f"KCDK weekly workflow failed: {exc}", file=sys.stderr)
         return 1
 

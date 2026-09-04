@@ -1,0 +1,9 @@
+{
+  "database_path": "data/processed/kcdk.sqlite",
+  "default_tone": "normal",
+  "members_path": "data/members.csv",
+  "season_identifier": "kcdk-2026",
+  "season_name": "KCDK 2026",
+  "season_year": 2026,
+  "state_path": "data/processed/discord_state.json"
+}

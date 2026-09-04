@@ -72,6 +72,54 @@ Run tests:
 python -m pytest
 ```
 
+## Interactive Windows weekly runner
+
+For the normal weekly operator workflow, double-click `Run KCDK Weekly.bat` in
+the repository root. The launcher uses only this project's
+`.venv\Scripts\python.exe`. If that environment is missing, it displays setup
+commands and exits; it never installs packages automatically.
+
+On first use, the runner asks for non-secret season defaults and stores them in
+ignored `data/processed/local_config.json`. The committed
+`data/local_config.example.json` shows the supported fields. API keys and
+Discord webhook URLs remain exclusively in the ignored `.env` file and are
+never copied to runner config or output.
+
+The guided flow opens a standard CSV file picker, suggests the next week from
+the existing database, and displays a read-only preflight containing the file,
+season/week, entrant and member-match counts, unmatched members, standings,
+money/player/ownership availability, duplicate/import status, publication
+status, and live-service readiness. Nothing is imported and no network call is
+made until the operator explicitly answers yes to:
+
+```text
+Publish this week live? [y/N]
+```
+
+Blank input is no. A previously published week also requires a separate,
+explicit repost confirmation. A changed CSV for an existing week is blocked;
+the interactive runner never performs an implicit replacement.
+
+Use the fully offline interactive preview before a live week:
+
+```powershell
+python -m kcdk weekly-runner --dry-run
+```
+
+You can bypass the picker or proposed week when needed:
+
+```powershell
+python -m kcdk weekly-runner `
+  --csv C:\path\to\contest.csv `
+  --week-number 5 `
+  --dry-run
+```
+
+Dry-run imports into a temporary copy of the database, renders the same weekly
+recap and both leaderboards with deterministic preview commentary, and never
+contacts OpenAI or Discord. The existing scriptable `python -m kcdk weekly`
+command remains available for advanced automation.
+
 Open `notebooks/season_analysis.ipynb` in VS Code or Jupyter and run all cells. The notebook calls package code rather than duplicating business logic.
 
 ## Weekly import workflow and idempotency
@@ -124,7 +172,7 @@ Priority weights live in `FACT_PRIORITY_BASES` and bonuses in `PRIORITY_BONUSES`
 
 Report warnings make incomplete prize, player-lineup, and ownership data explicit. Missing prize data never becomes a known $0 result. Player/money facts state historical co-occurrence only and do not claim that a selection caused an outcome.
 
-Current limitations: thresholds are provisional; lineup/ownership and prize aliases still need validation against a real DraftKings export; player identity currently depends on normalized names; and the first fact set intentionally favors transparent rules over statistical anomaly modeling. OpenAI commentary requires a separately funded API account and is intentionally opt-in. Discord delivery does not exist yet.
+Current limitations: thresholds are provisional; lineup/ownership and prize aliases still need validation against a real DraftKings export; player identity currently depends on normalized names; and the first fact set intentionally favors transparent rules over statistical anomaly modeling. OpenAI commentary requires a separately funded API account and is intentionally opt-in.
 
 ## OpenAI weekly commentary
 
