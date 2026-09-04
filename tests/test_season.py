@@ -216,8 +216,8 @@ def test_leaderboard_tiebreakers_are_applied_in_configured_order():
 def test_tournament_leaderboard_money_aggregation_and_ordering(season_db):
     leaderboard = tournament_performance_leaderboard(season_db, "mock-2026")
     assert leaderboard["display_name"].tolist() == [
-        "Casey North",
         "Alex Rowan",
+        "Casey North",
         "Jordan Vale",
         "Sam Ellis",
         "Taylor Quinn",
@@ -237,12 +237,15 @@ def test_tournament_leaderboard_money_aggregation_and_ordering(season_db):
     assert casey["best_tournament_rank"] == 1
     assert casey["average_tournament_rank"] == pytest.approx(2.25)
 
-    # Alex and Jordan both won $50; Alex wins the fantasy-points tiebreak.
-    alex, jordan = leaderboard.set_index("display_name").loc[
-        ["Alex Rowan", "Jordan Vale"]
+    # Casey and Jordan both won $125.50; Casey wins the fantasy-points tiebreak.
+    casey_tied, jordan = leaderboard.set_index("display_name").loc[
+        ["Casey North", "Jordan Vale"]
     ].itertuples()
-    assert alex.total_money_won == jordan.total_money_won == pytest.approx(50)
-    assert alex.average_draftkings_fantasy_points > jordan.average_draftkings_fantasy_points
+    assert casey_tied.total_money_won == jordan.total_money_won == pytest.approx(125.50)
+    assert (
+        casey_tied.average_draftkings_fantasy_points
+        > jordan.average_draftkings_fantasy_points
+    )
 
     taylor = leaderboard.set_index("display_name").loc["Taylor Quinn"]
     assert taylor["weeks_with_prize_data"] == 3

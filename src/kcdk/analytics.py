@@ -50,9 +50,11 @@ def sort_tournament_leaderboard(leaderboard: pd.DataFrame) -> pd.DataFrame:
 
 
 def _season_results(
-    connection: sqlite3.Connection, season_identifier: str
+    connection: sqlite3.Connection,
+    season_identifier: str,
+    through_contest_id: int | None = None,
 ) -> pd.DataFrame:
-    return pd.read_sql_query(
+    results = pd.read_sql_query(
         """
         SELECT c.id AS contest_id, c.week_number, c.week_label,
                m.id AS member_id, m.member_key, m.display_name,
@@ -68,6 +70,25 @@ def _season_results(
         connection,
         params=[season_identifier],
     )
+    if through_contest_id is None:
+        return results
+    contests = pd.read_sql_query(
+        """
+        SELECT c.id
+        FROM contests c JOIN seasons s ON s.id = c.season_id
+        WHERE s.identifier = ?
+        ORDER BY COALESCE(c.week_number, 2147483647), c.contest_date, c.id
+        """,
+        connection,
+        params=[season_identifier],
+    )
+    matching = contests.index[contests["id"].eq(through_contest_id)].tolist()
+    if not matching:
+        raise ValueError(
+            f"Contest {through_contest_id} does not belong to season {season_identifier}"
+        )
+    allowed_ids = set(contests.iloc[: matching[0] + 1]["id"])
+    return results.loc[results["contest_id"].isin(allowed_ids)].copy()
 
 
 def _with_last_place(results: pd.DataFrame) -> pd.DataFrame:
@@ -81,10 +102,14 @@ def _with_last_place(results: pd.DataFrame) -> pd.DataFrame:
 
 
 def season_leaderboard(
-    connection: sqlite3.Connection, season_identifier: str
+    connection: sqlite3.Connection,
+    season_identifier: str,
+    through_contest_id: int | None = None,
 ) -> pd.DataFrame:
     """Build the official average-weekly-finish season leaderboard."""
-    results = _with_last_place(_season_results(connection, season_identifier))
+    results = _with_last_place(
+        _season_results(connection, season_identifier, through_contest_id)
+    )
     columns = [
         "season_rank",
         "display_name",
@@ -146,10 +171,12 @@ def _known_cash_rate(values: pd.Series) -> float:
 
 
 def tournament_performance_leaderboard(
-    connection: sqlite3.Connection, season_identifier: str
+    connection: sqlite3.Connection,
+    season_identifier: str,
+    through_contest_id: int | None = None,
 ) -> pd.DataFrame:
     """Aggregate the distinct money-first DraftKings tournament leaderboard."""
-    results = _season_results(connection, season_identifier)
+    results = _season_results(connection, season_identifier, through_contest_id)
     columns = [
         "tournament_rank",
         "display_name",

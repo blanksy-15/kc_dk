@@ -18,6 +18,14 @@ from .analytics import (
 )
 from .members import load_members
 from .persistence import connect_database, import_week, weekly_results
+from .facts import (
+    Fact,
+    FactEngineConfig,
+    WeeklyFactReport,
+    build_weekly_fact_report,
+    generate_weekly_facts,
+    select_facts,
+)
 
 __all__ = [
     "REQUIRED_FIELDS",
@@ -36,4 +44,10 @@ __all__ = [
     "consecutive_player_use",
     "unanimous_weekly_selections",
     "unique_weekly_selections",
+    "Fact",
+    "FactEngineConfig",
+    "WeeklyFactReport",
+    "build_weekly_fact_report",
+    "generate_weekly_facts",
+    "select_facts",
 ]

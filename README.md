@@ -33,10 +33,12 @@ These standings are not an alternate calculation of the internal KCDK leaderboar
 - `src/kcdk/lineups.py`: tolerant lineup parsing and side-by-side player ownership/FPTS metadata lookup. Unknown lineup formats produce warnings and do not block result import.
 - `src/kcdk/persistence.py`: SQLite schema initialization and the high-level normalize, match, rank, parse, and atomic import workflow.
 - `src/kcdk/analytics.py`: official season leaderboard, member/group player usage, and factual selection-pattern helpers.
+- `src/kcdk/facts.py`: structured fact models, deterministic fact generators, transparent priority scoring, balanced selection, and weekly JSON-ready reports.
 - `src/kcdk/members.py`: editable active/inactive member configuration.
 - `src/kcdk/config.py` and `src/kcdk/models.py`: portable project paths.
 - `data/mock/`: version-controlled fictional members and contest fixtures.
 - `notebooks/season_analysis.ipynb`: end-to-end demonstration using a temporary database.
+- `notebooks/fact_engine.ipynb`: candidate facts, selected talking points, priorities/tags, completeness warnings, and the serialized payload for a fictional week.
 
 SQLite uses normalized `seasons`, `members`, `season_members`, `contests`, `member_results`, `players`, and `lineup_players` tables. Integer primary keys link records internally. Prize amounts are nullable integer cents on `member_results`, avoiding floating-point money storage. The editable member CSV has a stable `member_key`; keep that key unchanged if a member changes their DraftKings or display name.
 
@@ -91,9 +93,32 @@ Group usage contains total KCDK selections, unique member count, weeks appeared,
 
 Tournament percentile is 0–100, where rank 1 is 100 and the final rank is 0. A one-entry contest is assigned 100.
 
+## Trash-talk fact engine
+
+The fact engine calculates structured, verifiable talking points for a selected contest. Python owns all rankings, comparisons, streaks, margins, money calculations, and completeness decisions. A future language-model layer will receive the selected facts and may phrase them as commentary; it will not be responsible for calculating or inventing the underlying claims.
+
+Each `Fact` keeps machine-readable values separate from its concise factual summary. It includes a fact type, category, subject and related member IDs/names, optional player and contest context, evidence, completeness, priority, and neutral tags. Facts and `WeeklyFactReport` objects serialize directly to JSON-ready dictionaries. `build_weekly_fact_report` accepts either a stable season identifier or internal season ID plus an optional contest ID; historical reports are restricted to information available through that contest.
+
+Initial generators cover:
+
+- Weekly winners/last places, score margins, ties, tournament results, personal bests/worsts, and score deviations from a member's prior average.
+- Win, podium, last-place, direction, cash, known-zero, player-use, and head-to-head streaks.
+- KCDK and tournament leaders, cross-leaderboard contrasts, standings-rank contrasts, and differences between wins/scores and internal rank.
+- Known season winnings, largest/first/threshold cashes, no-cash facts, earnings gaps/ties, and weekly KCDK-versus-cash outcomes.
+- Repeated, unanimous, unique, and most-used players plus factual KCDK, cash, and winnings history when those players were rostered.
+- Weekly and member ownership extremes, unique low-owned choices, unanimous high-owned choices, and threshold-backed repeated ownership patterns.
+- Pairwise shared-week records, current head-to-head streaks, ties, average score/finish differences, known money differences, and closest score gaps.
+- New or tied season records for fantasy score, tournament percentile, victory/closest margins, and cashes.
+
+Priority weights live in `FACT_PRIORITY_BASES` and bonuses in `PRIORITY_BONUSES`; generation thresholds live in `FactEngineConfig`. The score is a visible sum of the fact-type base, bounded streak/magnitude bonuses, and an optional record bonus. There is no randomness. Selection first seeks category coverage, then fills by priority while respecting a configurable per-member cap where possible, then relaxes that cap only when necessary. Duplicate identities are removed and final ordering is deterministic. The default shortlist contains at most 12 facts.
+
+Report warnings make incomplete prize, player-lineup, and ownership data explicit. Missing prize data never becomes a known $0 result. Player/money facts state historical co-occurrence only and do not claim that a selection caused an outcome.
+
+Current limitations: thresholds are provisional; lineup/ownership and prize aliases still need validation against a real DraftKings export; player identity currently depends on normalized names; and the first fact set intentionally favors transparent rules over statistical anomaly modeling. The next phase is OpenAI commentary generation constrained to the selected JSON facts. No OpenAI or Discord integration exists yet.
+
 ## Mock multi-week season
 
-`data/mock/season_week_1.csv` through `season_week_4.csv` contain four fictional weeks and five fictional active KCDK members. The fixtures include four different winners, repeated podiums, a four-week last-place streak, an average-finish tie, recurring player choices, one unanimous weekly player, unique weekly players, and consecutive selections. Prize data includes known zeroes, small cashes, a larger win, equal total winnings resolved by average fantasy points, and one missing result. Optional player/FPTS/ownership columns model the side-by-side metadata pattern without coupling it to entrant rows.
+`data/mock/season_week_1.csv` through `season_week_4.csv` contain four fictional weeks and five fictional active KCDK members. The fixtures include four different winners, repeated podiums, a four-week last-place streak, an average-finish tie, close and large score margins, recurring player choices, one unanimous weekly player, unique weekly players, consecutive selections, head-to-head streaks, and latest-week season records. Prize data includes known zeroes, a three-week known-zero streak followed by missing data, small cashes, a larger win, equal total winnings resolved by average fantasy points, and different KCDK-versus-earnings leaders. Optional player/FPTS/ownership columns model the side-by-side metadata pattern without coupling it to entrant rows.
 
 ## First real export validation
 
@@ -101,7 +126,7 @@ Before production use, validate the first real export's delimiter, encoding, hea
 
 ## Planned phases
 
-1. Validate and adapt parsing against the first real DraftKings export.
-2. Build leaderboard graphics from the persisted facts.
-3. Add OpenAI-generated commentary constrained to Python-calculated facts.
+1. Validate and adapt parsing and fact thresholds against the first real DraftKings export.
+2. Add OpenAI-generated commentary constrained to selected Python-calculated facts.
+3. Build leaderboard graphics from the persisted facts.
 4. Add Discord integration.
