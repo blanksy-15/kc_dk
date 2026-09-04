@@ -293,9 +293,12 @@ one short message, only when Python finds strong existing facts. It never decide
 what happened or whether a week qualifies.
 
 The layers are separate: `facts.py` → `drunk_bot.py` eligibility →
-`drunk_bot_prompt.py` (prompt version `1`) → `drunk_bot_commentary.py` structured
-generation → `drunk_bot_publishing.py` state/delivery. The Commissioner prompt is
-unchanged. Both use the configured OpenAI Responses provider/model; optional
+`drunk_bot_prompt.py` (prompt version `2`) → `drunk_bot_commentary.py` structured
+generation → `drunk_bot_publishing.py` state/delivery. Both prompts are version `2`
+and share explicit weekly DFS context: every contest has a new lineup, and
+historical player usage means repeated selection across separate weekly contests,
+never persistent rosters or player ownership. Their separate voices remain intact.
+Both use the configured OpenAI Responses provider/model; optional
 `DRUNK_BOT_OPENAI_MODEL` overrides only the second persona. Structured generation
 uses a strict JSON schema, following the
 [OpenAI structured output documentation](https://developers.openai.com/api/docs/guides/structured-outputs).

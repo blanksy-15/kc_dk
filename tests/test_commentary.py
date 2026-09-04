@@ -177,6 +177,23 @@ def test_prompt_has_fact_causality_partial_and_safety_restrictions():
 
 
 @pytest.mark.parametrize("tone", ["mild", "normal", "ruthless"])
+def test_commissioner_prompt_explicitly_frames_weekly_dfs(tone):
+    instructions = " ".join(build_commentary_request(_report(), tone=tone).instructions.split())
+    assert "KCDK is daily fantasy sports" in instructions
+    assert "Each week is a separate DraftKings DFS contest with a newly constructed lineup" in instructions
+    assert "in separate weekly DFS lineups N times" in instructions
+    assert "Consecutive usage means a new selection" in instructions
+    assert "Season standings aggregate those separate contests" in instructions
+    assert "finished last in N separate KCDK contests" in instructions
+    assert "Field ownership describes entrants selecting a player on a slate" in instructions
+    forbidden = instructions.split("Do not use language implying persistent teams or player ownership", 1)[1].split("Prefer lineup", 1)[0]
+    for phrase in ("drafted Player X", "kept Player X", "held Player X", "traded for",
+                   "waiver pickup", "bench", "own Player X", "your team all season", "rostered all season"):
+        assert phrase in forbidden
+    assert "NO persistent fantasy rosters, season-long owned players, trades, waivers, bench decisions, keeper decisions" in instructions
+
+
+@pytest.mark.parametrize("tone", ["mild", "normal", "ruthless"])
 def test_supported_tones_are_explicit_in_prompt(tone):
     request = build_commentary_request(_report(), tone=tone)
     assert request.tone == tone
@@ -287,7 +304,7 @@ def test_generation_metadata_and_output_are_json_serializable():
 
     payload = json.loads(result.to_json())
     assert payload["dry_run"] is False
-    assert payload["prompt_version"] == "1"
+    assert payload["prompt_version"] == COMMENTARY_PROMPT_VERSION
     assert payload["fact_ids"] == list(result.request.fact_ids)
     assert payload["usage"] == {
         "input_tokens": 321,

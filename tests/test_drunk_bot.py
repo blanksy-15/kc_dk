@@ -8,6 +8,7 @@ import pytest
 
 from kcdk.commentary import CommentaryConfig, CommentaryResponseError, CommentaryAPIError, fact_identifier
 from kcdk.commentary_prompt import commentary_instructions
+from kcdk.drunk_bot_prompt import drunk_bot_instructions, DRUNK_BOT_PROMPT_VERSION
 from kcdk.discord import DiscordConfig, DiscordTransportError, RejectedDiscordMessageError
 from kcdk.drunk_bot import DrunkBotConfig, select_drunk_bot_facts
 from kcdk.drunk_bot_commentary import (
@@ -162,6 +163,28 @@ def test_prompts_are_separate_and_profanity_fact_rules_remain(report):
     assert "No protected-characteristic attacks" in prompt
     assert "Avoid profanity" in commentary_instructions("ruthless")
     assert "Do not use profanity" in generated(report, DrunkBotConfig(allow_profanity=False)).request["instructions"]
+
+
+@pytest.mark.parametrize("tone", ["normal", "ruthless"])
+@pytest.mark.parametrize("allow_profanity", [False, True])
+def test_drunk_bot_prompt_explicitly_disallows_persistent_rosters(tone, allow_profanity):
+    prompt = " ".join(drunk_bot_instructions(tone=tone, allow_profanity=allow_profanity, maximum=2).split())
+    assert f"PROMPT VERSION: {DRUNK_BOT_PROMPT_VERSION}" in prompt
+    assert "KCDK is daily fantasy sports" in prompt
+    assert "Each week is a separate DraftKings DFS contest with a newly constructed lineup" in prompt
+    assert "in separate weekly DFS lineups N times" in prompt
+    assert "Consecutive usage means a new selection" in prompt
+    assert "finished last in N separate KCDK contests" in prompt
+    assert "Field ownership describes entrants selecting a player on a slate" in prompt
+    assert "NO persistent fantasy rosters, season-long owned players, trades, waivers, bench decisions, keeper decisions" in prompt
+    forbidden = prompt.split("Do not use language implying persistent teams or player ownership", 1)[1].split("Prefer lineup", 1)[0]
+    for phrase in ("drafted Player X", "kept Player X", "held Player X", "traded for",
+                   "waiver pickup", "bench", "own Player X", "your team all season", "rostered all season"):
+        assert phrase in forbidden
+    for phrase in ("lineup", "slate", "entry", "weekly selection", "player exposure",
+                   "field ownership", "chalk", "contrarian selection", "tournament finish",
+                   "percentile", "cash / no cash", "entry fee", "lineup construction"):
+        assert phrase in prompt
 
 
 @pytest.mark.parametrize("mutation", ["unknown_id", "wrong_subject", "too_many", "too_long", "public_id", "repeat", "no_ids", "extra"])
