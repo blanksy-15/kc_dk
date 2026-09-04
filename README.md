@@ -131,23 +131,34 @@ changing analytical rank order:
 - `KCDK TOURNAMENT PERFORMANCE`, ranked by money, average DraftKings points,
   average tournament percentile, and display name.
 
-Both use a 1,400 px canvas width and fixed 52 px rows. Height grows with the
-number of entries instead of shrinking typography: 10, 15, and 20 rows render
-at 936, 1,196, and 1,456 px respectively. The intended normal range is 10–20
-members, with 20 as the maximum. Player names are ellipsized using Pillow glyph
-measurement; the default player text areas are 328 px for KCDK standings and
-318 px for tournament performance after padding.
+Both use a 1,400 px canvas width, 158 px header, 52 px fixed rows, and 124 px
+footer. Height grows with the number of entries instead of shrinking
+typography: 10, 15, and 20 rows render at 946, 1,206, and 1,466 px respectively.
+The intended normal range is 10–20 members, with 20 as the maximum. Player
+names are ellipsized using Pillow glyph measurement; the expanded default
+player text areas are 508 px for KCDK standings and 398 px for tournament
+performance after padding.
 
 Movement is calculated independently for the two leaderboards against the
 immediately previous imported contest in the same season. Positive movement is
 shown as `▲ N`, decline as `▼ N`, unchanged as `—`, and a first appearance or
 first week as `NEW`. Later contests are never included in a historical
-comparison. Known zero winnings remain `$0`; unknown amounts remain `—`, and an
-asterisk marks incomplete prize history with one restrained explanatory note.
+comparison. Currency uses two decimal places: known zero winnings remain
+`$0.00`, unknown amounts remain `—`, and an asterisk marks incomplete prize
+history.
 
-Optional authored assets can be placed in `assets/branding/`:
+KCDK standings show `RK`, `MOVE`, `PLAYER`, `AVG FIN`, `W`, `TOP 3`, `AVG PTS`,
+and cumulative internal `LAST` finishes. Tournament performance shows `RK`,
+`MOVE`, `PLAYER`, `WON`, `CASHES`, `AVG PTS`, `AVG PCTL`, and `BEST CASH`.
+Three factual broadcast-style footer panels summarize most wins, most podiums,
+and a meaningful current last-place streak for KCDK, plus money leader, most
+cashes, and best cash for tournament performance. Callout values are supplied
+from analytics; the drawing layer does not invent them.
 
-- `kcdk_logo.png`
+The authored `assets/branding/kcdk_logo.png` is used by default and contained
+within the configured logo region without stretching. Its RGBA channel is
+preserved. Other optional authored assets can be placed in `assets/branding/`:
+
 - `leaderboard_background.png`
 - `skyline.png`
 

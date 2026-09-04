@@ -223,6 +223,54 @@ def tournament_leaderboard_with_movement(
     )
 
 
+def current_last_place_streaks(
+    connection: sqlite3.Connection,
+    season_identifier: str,
+    through_contest_id: int | None = None,
+) -> pd.DataFrame:
+    """Return active trailing last-place streaks through the selected contest."""
+    current_id, _ = _current_and_previous_contest_ids(
+        connection, season_identifier, through_contest_id
+    )
+    contest_rows = connection.execute(
+        """
+        SELECT c.id
+        FROM contests c JOIN seasons s ON s.id = c.season_id
+        WHERE s.identifier = ?
+        ORDER BY COALESCE(c.week_number, 2147483647), c.contest_date, c.id
+        """,
+        (season_identifier,),
+    ).fetchall()
+    contest_ids = [int(row[0]) for row in contest_rows]
+    contest_ids = contest_ids[: contest_ids.index(current_id) + 1]
+    results = _with_last_place(
+        _season_results(connection, season_identifier, current_id)
+    )
+    records: list[dict[str, object]] = []
+    for display_name, member_rows in results.groupby("display_name", sort=False):
+        by_contest = member_rows.set_index("contest_id")["is_last_place"].to_dict()
+        streak = 0
+        for contest_id in reversed(contest_ids):
+            if not bool(by_contest.get(contest_id, False)):
+                break
+            streak += 1
+        if streak:
+            records.append(
+                {
+                    "display_name": str(display_name),
+                    "consecutive_weeks": streak,
+                }
+            )
+    return pd.DataFrame.from_records(
+        records, columns=["display_name", "consecutive_weeks"]
+    ).sort_values(
+        ["consecutive_weeks", "display_name"],
+        ascending=[False, True],
+        kind="stable",
+        ignore_index=True,
+    )
+
+
 def _season_results(
     connection: sqlite3.Connection,
     season_identifier: str,

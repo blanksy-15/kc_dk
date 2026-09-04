@@ -9,13 +9,19 @@ from kcdk.analytics import (
     MOVEMENT_SAME,
     MOVEMENT_UP,
     add_rank_movement,
+    current_last_place_streaks,
     season_leaderboard,
     season_leaderboard_with_movement,
     tournament_leaderboard_with_movement,
 )
 from kcdk.leaderboard_graphics import (
     BrandingAssetPaths,
+    KCDK_COLUMN_HEADERS,
+    TOURNAMENT_COLUMN_HEADERS,
+    LeaderboardCallout,
     LeaderboardVisualConfig,
+    build_kcdk_visual_rows,
+    centered_text_x,
     format_currency,
     format_movement,
     render_kcdk_standings_png,
@@ -161,6 +167,25 @@ def test_first_week_is_new_for_both_independent_leaderboards(tmp_path):
     assert tournament["movement_delta"].isna().all()
 
 
+def test_kcdk_last_place_totals_and_current_streak_are_analytics_data(tmp_path):
+    connection, contest_ids = _import_weeks(tmp_path, 4)
+    try:
+        leaderboard = season_leaderboard_with_movement(
+            connection, "mock-2026", contest_ids[-1]
+        )
+        streaks = current_last_place_streaks(
+            connection, "mock-2026", contest_ids[-1]
+        )
+    finally:
+        connection.close()
+    taylor = leaderboard.set_index("display_name").loc["Taylor Quinn"]
+    assert taylor["last_place_finishes"] == 4
+    assert streaks.iloc[0].to_dict() == {
+        "display_name": "Taylor Quinn",
+        "consecutive_weeks": 4,
+    }
+
+
 def test_member_absent_in_prior_contest_returns_as_new(tmp_path):
     week_two = pd.read_csv(MOCK / "season_week_2.csv")
     member_config = pd.read_csv(MEMBERS)
@@ -197,8 +222,8 @@ def test_member_absent_in_prior_contest_returns_as_new(tmp_path):
 
 
 def test_dynamic_height_and_fixed_width_for_10_15_20_rows(tmp_path):
-    kcdk, _, _ = build_preview_frames()
-    expected_heights = {10: 936, 15: 1196, 20: 1456}
+    kcdk, _, _, _ = build_preview_frames()
+    expected_heights = {10: 946, 15: 1206, 20: 1466}
     for count, expected_height in expected_heights.items():
         result = render_kcdk_standings_png(
             _rows(kcdk, count),
@@ -231,15 +256,65 @@ def test_long_name_uses_measured_ellipsis():
 
 
 def test_currency_preserves_zero_unknown_and_incomplete():
-    assert format_currency(0.0) == "$0"
+    assert format_currency(0.0) == "$0.00"
     assert format_currency(125.5) == "$125.50"
     assert format_currency(None) == "—"
-    assert format_currency(0.0, complete=False) == "$0*"
-    assert format_currency(None, complete=False) == "—*"
+    assert format_currency(0.0, complete=False) == "$0.00*"
+    assert format_currency(None, complete=False) == "—"
+
+
+def test_refined_headers_and_internal_kcdk_visual_model():
+    assert KCDK_COLUMN_HEADERS == (
+        "RK", "MOVE", "PLAYER", "AVG FIN", "W", "TOP 3", "AVG PTS", "LAST"
+    )
+    assert "WON" not in KCDK_COLUMN_HEADERS
+    assert TOURNAMENT_COLUMN_HEADERS[-2] == "AVG PCTL"
+    kcdk, _, _, _ = build_preview_frames()
+    style = LeaderboardVisualConfig()
+    rows, incomplete = build_kcdk_visual_rows(kcdk, style)
+    assert rows[0]["values"][-1] == str(int(kcdk.iloc[0]["last_place_finishes"]))
+    assert incomplete is False
+    assert style.kcdk_column_widths[2] == 540
+    assert style.tournament_column_widths[2] == 430
+    assert sum(style.kcdk_column_widths) == 1312
+    assert sum(style.tournament_column_widths) == 1312
+
+
+def test_top_three_tints_do_not_change_row_height():
+    style = LeaderboardVisualConfig()
+    assert len(
+        {
+            style.first_place_row_color,
+            style.second_place_row_color,
+            style.third_place_row_color,
+        }
+    ) == 3
+    assert style.image_height(4) - style.image_height(3) == style.row_height
+
+
+def test_complete_movement_labels_center_within_rebalanced_column():
+    style = LeaderboardVisualConfig()
+    fonts = resolve_fonts(style)
+    image = Image.new("RGB", (style.canvas_width, 100))
+    draw = ImageDraw.Draw(image)
+    bounds = (
+        style.outer_margin + style.kcdk_column_widths[0],
+        style.outer_margin
+        + style.kcdk_column_widths[0]
+        + style.kcdk_column_widths[1],
+    )
+    expected_center = sum(bounds) / 2
+    for label in ("▲ 12", "▼ 12", "—", "NEW"):
+        left = centered_text_x(draw, bounds, label, fonts.rank)
+        assert left > bounds[0]
+        assert left + text_width(draw, label, fonts.rank) < bounds[1]
+        assert abs(
+            left + text_width(draw, label, fonts.rank) / 2 - expected_center
+        ) < 0.01
 
 
 def test_renderers_work_without_authored_assets_and_produce_valid_png(tmp_path):
-    kcdk, tournament, _ = build_preview_frames()
+    kcdk, tournament, kcdk_callouts, tournament_callouts = build_preview_frames()
     missing_assets = BrandingAssetPaths(tmp_path / "missing-assets")
     first = render_kcdk_standings_png(
         kcdk,
@@ -247,6 +322,7 @@ def test_renderers_work_without_authored_assets_and_produce_valid_png(tmp_path):
         season_label="2026 SEASON",
         week_label="Week 4",
         weeks_completed=4,
+        callouts=kcdk_callouts,
         assets=missing_assets,
     )
     second = render_tournament_performance_png(
@@ -255,31 +331,34 @@ def test_renderers_work_without_authored_assets_and_produce_valid_png(tmp_path):
         season_label="2026 SEASON",
         week_label="Week 4",
         weeks_completed=4,
+        callouts=tournament_callouts,
         assets=missing_assets,
     )
     assert first.loaded_assets == ()
     assert second.loaded_assets == ()
-    assert first.incomplete_prize_data
+    assert not first.incomplete_prize_data
     assert second.incomplete_prize_data
+    assert first.callout_count == 3
+    assert second.callout_count == 3
     for result in (first, second):
         with Image.open(result.path) as image:
             assert image.format == "PNG"
-            assert image.size == (1400, 1196)
+            assert image.size == (1400, 1206)
 
 
 def test_renderer_loads_mock_branding_assets_without_stretching(tmp_path):
     assets = tmp_path / "assets"
     assets.mkdir()
-    Image.new("RGBA", (300, 100), (243, 113, 33, 255)).save(
-        assets / "kcdk_logo.png"
-    )
+    logo = Image.new("RGBA", (300, 100), (0, 0, 0, 0))
+    ImageDraw.Draw(logo).rectangle((20, 20, 280, 80), fill=(243, 113, 33, 255))
+    logo.save(assets / "kcdk_logo.png")
     Image.new("RGB", (400, 900), (30, 32, 34)).save(
         assets / "leaderboard_background.png"
     )
     Image.new("RGBA", (900, 120), (55, 181, 111, 160)).save(
         assets / "skyline.png"
     )
-    kcdk, _, _ = build_preview_frames()
+    kcdk, _, _, _ = build_preview_frames()
     result = render_kcdk_standings_png(
         kcdk,
         tmp_path / "branded.png",
@@ -293,5 +372,57 @@ def test_renderer_loads_mock_branding_assets_without_stretching(tmp_path):
         "leaderboard_background.png",
         "skyline.png",
     }
+    source_ratio = 300 / 100
+    rendered_ratio = result.logo_rendered_size[0] / result.logo_rendered_size[1]
+    assert abs(rendered_ratio - source_ratio) < 0.05
+    assert result.logo_rendered_size == (126, 42)
+    assert logo.getchannel("A").getextrema() == (0, 255)
     with Image.open(result.path) as image:
-        assert image.size == (1400, 1196)
+        assert image.size == (1400, 1206)
+
+
+def test_authored_project_logo_loads_at_preserved_aspect_ratio(tmp_path):
+    kcdk, _, _, _ = build_preview_frames()
+    result = render_kcdk_standings_png(
+        kcdk,
+        tmp_path / "authored-logo.png",
+        season_label="2026 SEASON",
+        week_label="Week 4",
+        weeks_completed=4,
+        assets=BrandingAssetPaths(ROOT / "assets" / "branding"),
+    )
+    assert "kcdk_logo.png" in result.loaded_assets
+    assert result.logo_rendered_size == (112, 110)
+    source_ratio = 1545 / 1513
+    rendered_ratio = result.logo_rendered_size[0] / result.logo_rendered_size[1]
+    assert abs(rendered_ratio - source_ratio) < 0.01
+
+
+def test_missing_optional_footer_callout_renders_cleanly(tmp_path):
+    kcdk, _, callouts, _ = build_preview_frames()
+    result = render_kcdk_standings_png(
+        kcdk,
+        tmp_path / "two-callouts.png",
+        season_label="2026 SEASON",
+        week_label="Week 4",
+        weeks_completed=4,
+        callouts=callouts[:2],
+    )
+    assert result.callout_count == 2
+
+
+def test_footer_callout_models_are_factual_and_currency_ready():
+    _, _, kcdk_callouts, tournament_callouts = build_preview_frames()
+    assert [item.label for item in kcdk_callouts] == [
+        "Most Wins",
+        "Most Podiums",
+        "Last-Place Streak",
+    ]
+    assert [item.label for item in tournament_callouts] == [
+        "Money Leader",
+        "Most Cashes",
+        "Best Cash",
+    ]
+    assert tournament_callouts[0].value_kind == "currency"
+    assert tournament_callouts[2].value_kind == "currency"
+    LeaderboardCallout("Optional", "Member", "No metric", "text")

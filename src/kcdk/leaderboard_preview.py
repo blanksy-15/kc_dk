@@ -13,11 +13,13 @@ from .analytics import (
     MOVEMENT_NEW,
     MOVEMENT_SAME,
     MOVEMENT_UP,
+    current_last_place_streaks,
     season_leaderboard_with_movement,
     tournament_leaderboard_with_movement,
 )
 from .leaderboard_graphics import (
     BrandingAssetPaths,
+    LeaderboardCallout,
     RenderedLeaderboard,
     render_kcdk_standings_png,
     render_tournament_performance_png,
@@ -90,9 +92,8 @@ def _extend_kcdk(data: pd.DataFrame) -> pd.DataFrame:
                 "average_finish": 5.5 + ((offset - 6) // 2) * 0.55,
                 "wins": 0,
                 "podium_finishes": 1 if offset < 9 else 0,
+                "last_place_finishes": max(0, offset - 12),
                 "average_draftkings_fantasy_points": 168.25 - offset * 1.8,
-                "total_money_won": 0.0 if offset % 3 else None,
-                "prize_data_complete": offset % 4 != 0,
                 "movement_status": movement[0],
                 "movement_delta": movement[1],
             }
@@ -122,7 +123,12 @@ def _extend_tournament(data: pd.DataFrame) -> pd.DataFrame:
     return pd.concat([data, pd.DataFrame.from_records(records)], ignore_index=True)
 
 
-def build_preview_frames() -> tuple[pd.DataFrame, pd.DataFrame, tuple[str, ...]]:
+def build_preview_frames() -> tuple[
+    pd.DataFrame,
+    pd.DataFrame,
+    tuple[LeaderboardCallout, ...],
+    tuple[LeaderboardCallout, ...],
+]:
     """Use real mock analytics, then add presentation-only rows to reach 15."""
     with tempfile.TemporaryDirectory(prefix="kcdk-graphics-preview-") as temporary:
         connection, contest_id = _import_mock_season(Path(temporary) / "preview.sqlite")
@@ -133,23 +139,72 @@ def build_preview_frames() -> tuple[pd.DataFrame, pd.DataFrame, tuple[str, ...]]
             tournament = tournament_leaderboard_with_movement(
                 connection, "mock-2026", contest_id
             )
+            last_place_streaks = current_last_place_streaks(
+                connection, "mock-2026", contest_id
+            )
         finally:
             connection.close()
 
-    money = tournament[
-        ["display_name", "total_money_won", "prize_data_complete"]
-    ]
-    kcdk = kcdk.merge(money, on="display_name", how="left")
     most_wins = kcdk.sort_values(
         ["wins", "display_name"], ascending=[False, True], kind="stable"
     ).iloc[0]
-    earnings_leader = tournament.iloc[0]
-    callouts = (
-        f"MOST WINS: {most_wins['display_name']} ({int(most_wins['wins'])})",
-        f"EARNINGS LEADER: {earnings_leader['display_name']} "
-        f"(${float(earnings_leader['total_money_won']):,.0f})",
+    most_podiums = kcdk.sort_values(
+        ["podium_finishes", "display_name"],
+        ascending=[False, True],
+        kind="stable",
+    ).iloc[0]
+    kcdk_callouts = [
+        LeaderboardCallout("Most Wins", str(most_wins["display_name"]), most_wins["wins"]),
+        LeaderboardCallout(
+            "Most Podiums",
+            str(most_podiums["display_name"]),
+            most_podiums["podium_finishes"],
+        ),
+    ]
+    if not last_place_streaks.empty:
+        streak = last_place_streaks.iloc[0]
+        if int(streak["consecutive_weeks"]) >= 2:
+            kcdk_callouts.append(
+                LeaderboardCallout(
+                    "Last-Place Streak",
+                    str(streak["display_name"]),
+                    streak["consecutive_weeks"],
+                    "weeks",
+                )
+            )
+
+    money_leader = tournament.loc[tournament["total_money_won"].notna()].iloc[0]
+    most_cashes = tournament.loc[tournament["cashes"].notna()].sort_values(
+        ["cashes", "display_name"], ascending=[False, True], kind="stable"
+    ).iloc[0]
+    best_cash = tournament.loc[
+        tournament["largest_single_tournament_win"].idxmax()
+    ]
+    tournament_callouts = (
+        LeaderboardCallout(
+            "Money Leader",
+            str(money_leader["display_name"]),
+            money_leader["total_money_won"],
+            "currency",
+        ),
+        LeaderboardCallout(
+            "Most Cashes",
+            str(most_cashes["display_name"]),
+            most_cashes["cashes"],
+        ),
+        LeaderboardCallout(
+            "Best Cash",
+            str(best_cash["display_name"]),
+            best_cash["largest_single_tournament_win"],
+            "currency",
+        ),
     )
-    return _extend_kcdk(kcdk), _extend_tournament(tournament), callouts
+    return (
+        _extend_kcdk(kcdk),
+        _extend_tournament(tournament),
+        tuple(kcdk_callouts),
+        tournament_callouts,
+    )
 
 
 def render_leaderboard_previews(
@@ -158,7 +213,7 @@ def render_leaderboard_previews(
     asset_directory: str | Path = PROJECT_ROOT / "assets" / "branding",
 ) -> tuple[RenderedLeaderboard, RenderedLeaderboard]:
     output = Path(output_directory)
-    kcdk, tournament, callouts = build_preview_frames()
+    kcdk, tournament, kcdk_callouts, tournament_callouts = build_preview_frames()
     assets = BrandingAssetPaths(Path(asset_directory))
     kcdk_result = render_kcdk_standings_png(
         kcdk,
@@ -166,7 +221,7 @@ def render_leaderboard_previews(
         season_label="2026 SEASON",
         week_label="Week 4",
         weeks_completed=4,
-        callouts=callouts,
+        callouts=kcdk_callouts,
         assets=assets,
     )
     tournament_result = render_tournament_performance_png(
@@ -175,7 +230,7 @@ def render_leaderboard_previews(
         season_label="2026 SEASON",
         week_label="Week 4",
         weeks_completed=4,
-        callouts=callouts,
+        callouts=tournament_callouts,
         assets=assets,
     )
     return kcdk_result, tournament_result
