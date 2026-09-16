@@ -171,7 +171,7 @@ def test_drunk_bot_prompt_explicitly_disallows_persistent_rosters(tone, allow_pr
     prompt = " ".join(drunk_bot_instructions(tone=tone, allow_profanity=allow_profanity, maximum=2).split())
     assert f"PROMPT VERSION: {DRUNK_BOT_PROMPT_VERSION}" in prompt
     assert "KCDK is daily fantasy sports" in prompt
-    assert "Each week is a separate DraftKings DFS contest with a newly constructed lineup" in prompt
+    assert "Each weekly H2H is a separate DraftKings DFS contest with a newly constructed lineup" in prompt
     assert "in separate weekly DFS lineups N times" in prompt
     assert "Consecutive usage means a new selection" in prompt
     assert "finished last in N separate KCDK contests" in prompt
@@ -386,13 +386,20 @@ def test_version_one_state_loads_without_reposting_old_weeks(tmp_path):
 def test_preflight_shows_eligibility_using_temporary_database(season_db, tmp_path):
     database = Path(season_db.execute("PRAGMA database_list").fetchone()[2])
     before = database.read_bytes()
-    config = LocalWeeklyConfig(season_identifier="mock-2026", season_name="Mock 2026",
+    import pandas as pd
+    frame = pd.read_csv(MOCK / "season_week_4.csv")
+    names = pd.read_csv(MOCK / "members.csv").draftkings_name
+    frame = frame.loc[frame["Entry Name"].isin(names)].copy()
+    frame["Rank"] = frame.Points.rank(method="min", ascending=False).astype(int)
+    source = tmp_path / "h2h.csv"
+    frame.to_csv(source, index=False)
+    config = LocalWeeklyConfig(season_identifier="mock-2026", season_name="Mock 2026", h2h_dk_fee_cents=100,
         members_path=str(MOCK / "members.csv"), database_path=str(database), state_path=str(tmp_path / "state.json"))
-    result = build_preflight(csv_path=MOCK / "season_week_4.csv", config=config, week_number=4, dry_run=True)
+    result = build_preflight(csv_path=source, config=config, week_number=5, dry_run=True)
     assert result.can_continue and result.drunk_bot.eligible
-    assert "score=98" in result.render()
+    assert "score=100" in result.render()
     assert database.read_bytes() == before
-    disabled = build_preflight(csv_path=MOCK / "season_week_4.csv", config=replace(config, drunk_bot_enabled=False), week_number=4, dry_run=True)
+    disabled = build_preflight(csv_path=source, config=replace(config, drunk_bot_enabled=False), week_number=5, dry_run=True)
     assert not disabled.drunk_bot.enabled
 
 

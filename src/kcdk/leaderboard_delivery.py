@@ -105,6 +105,10 @@ def prepare_leaderboard(
     if config.mode == "text":
         prepared.reason = "text mode configured"
         return prepared
+    if frame.empty:
+        prepared.rendering_attempted = False
+        prepared.reason = "No tournament participation; text status only"
+        return prepared
     try:
         renderer(
             frame, prepared.image_path, season_label=season_name,

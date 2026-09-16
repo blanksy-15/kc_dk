@@ -9,11 +9,16 @@ import math
 import sqlite3
 from typing import Any, Iterable
 
-from .analytics import season_leaderboard, tournament_performance_leaderboard
+from .analytics import season_leaderboard, legacy_tournament_performance_leaderboard as tournament_performance_leaderboard
 
 
 FACT_PRIORITY_BASES: dict[str, int] = {
     "weekly_winner": 84,
+    "tournament_entries": 78,
+    "tournament_finishes": 80,
+    "tournament_economics": 86,
+    "tournament_low_owned_selection": 70,
+    "h2h_economics": 76,
     "weekly_last_place": 72,
     "margin_of_victory": 70,
     "closest_weekly_finish": 68,
@@ -264,11 +269,11 @@ def _load_results(
         contest_ids,
     )
     last_finish = {
-        contest["id"]: max(
+        contest["id"]: max((
             row["kcdk_finish"]
             for row in results
             if row["contest_id"] == contest["id"]
-        )
+        ), default=0)
         for contest in contests
     }
     for row in results:
@@ -345,7 +350,7 @@ def _make_fact(
 
 
 def _money(value: int | None) -> str:
-    return "unknown" if value is None else f"${value / 100:,.2f}"
+    return "unknown" if value is None else f"{'-' if value < 0 else ''}${abs(value) / 100:,.2f}"
 
 
 def _weekly_result_facts(
@@ -805,6 +810,8 @@ def _season_and_money_facts(
     facts: list[Fact] = []
     identifier = season["identifier"]
     kcdk = season_leaderboard(connection, identifier, target["id"])
+    if kcdk.empty:
+        return facts
     tournament = tournament_performance_leaderboard(
         connection, identifier, target["id"]
     )
@@ -1656,7 +1663,7 @@ def _record_facts(
     facts: list[Fact] = []
     current = [row for row in results if row["contest_id"] == target["id"]]
     prior = [row for row in results if row["contest_id"] != target["id"]]
-    if not prior:
+    if not prior or not current:
         return facts
 
     record_specs = [
@@ -1819,7 +1826,66 @@ def generate_weekly_facts(
     )
     facts.extend(_head_to_head_facts(identifier, target, results, config))
     facts.extend(_record_facts(identifier, target, contests, results))
+    if target.get("contest_type") == "KCDK_H2H":
+        # Old fact generators remain valid for internal standings, not external
+        # tournament economics or source ranks from the small H2H field.
+        excluded = {"winner_tournament_result", "last_place_tournament_result",
+                    "tournament_earnings_leader", "different_leaderboard_leaders",
+                    "standings_rank_contrast", "season_percentile_record",
+                    "consecutive_cashes", "consecutive_known_zeroes", "player_money_history", "season_cash_record"}
+        facts = [fact for fact in facts if fact.category != "money" and fact.fact_type not in excluded]
+        for row in results:
+            if row["contest_id"] == target["id"]:
+                gross = row["prize_cents"]
+                facts.append(_make_fact(fact_type="h2h_economics",category="h2h",
+                    summary=f"{row['display_name']} received {_money(gross)} gross in H2H, paid $5.00, and finished net {_money(gross-500)}.",
+                    season_identifier=identifier,contest=target,subject=row,
+                    values={"gross_winnings_cents":gross,"entry_fee_cents":500,"net_profit_cents":gross-500},tags=("h2h","economics")))
+    facts.extend(generate_tournament_facts(connection, identifier, target["week_label"]))
     return sorted(facts, key=_fact_sort_key)
+
+
+def generate_tournament_facts(connection, season_identifier, week_label):
+    """External tournament facts never award internal wins, last places or unanimity."""
+    from .tournaments import tournament_aggregates, tournament_entries
+    aggregates = tournament_aggregates(connection,season_identifier,week_label=week_label)
+    entries = tournament_entries(connection,season_identifier,week_label=week_label)
+    facts = []
+    for row in aggregates.to_dict("records"):
+        member_entries = entries.loc[entries.member_id.eq(row["member_id"])]
+        best = member_entries.sort_values(["points","rank","entry_id"],ascending=[False,True,True]).iloc[0]
+        worst = member_entries.sort_values(["points","rank","entry_id"],ascending=[True,False,True]).iloc[0]
+        # Keep tournament identity in evidence, not the H2H contest-ID namespace.
+        common = dict(season_identifier=season_identifier,subject_member_id=row["member_id"],
+            subject_member_name=row["display_name"],week_label=week_label,
+            evidence={"tournament_id":int(best.tournament_id),"entry_ids":member_entries.entry_id.tolist()},tags=("tournament",))
+        facts.append(Fact(fact_type="tournament_entries",category="tournament",priority=78,
+            summary=f"{row['display_name']} entered {row['entry_count']} tournament lineups in {week_label}.",
+            values={"entry_count":row["entry_count"]},**common))
+        facts.append(Fact(fact_type="tournament_finishes",category="tournament",priority=80,
+            summary=f"{row['display_name']}'s best tournament rank was {row['best_tournament_rank']:,}; average percentile {row['average_tournament_percentile']:.2f}. Strongest entry scored {best.points:.2f}; weakest scored {worst.points:.2f}.",
+            values={"best_rank":row["best_tournament_rank"],"worst_rank":row["worst_tournament_rank"],
+                    "average_percentile":row["average_tournament_percentile"],"best_points":float(best.points),
+                    "worst_points":float(worst.points),"strongest_entry_id":best.entry_id,"weakest_entry_id":worst.entry_id},**common))
+        known = row["prize_data_complete"]
+        summary = (f"{row['display_name']} won ${row['total_money_won']:.2f} gross, paid ${row['total_entry_fees']:.2f} in tournament fees, and finished net {_money(row['net_profit_cents'])}; {row['cashes']} of {row['entry_count']} entries cashed ({row['cash_rate']:.1f}%)."
+                   if known else f"{row['display_name']} paid ${row['total_entry_fees']:.2f} in tournament fees; gross winnings, net and cash rate are unknown without payouts.")
+        facts.append(Fact(fact_type="tournament_economics",category="tournament",priority=86,
+            summary=summary,completeness="complete" if known else "partial",
+            values={"entry_count":row["entry_count"],"entry_fees_cents":row["total_entry_fees_cents"],
+                    "gross_winnings_cents":row["total_gross_winnings_cents"] if known else None,
+                    "net_profit_cents":row["net_profit_cents"] if known else None,
+                    "cashing_entries":row["cashes"] if known else None,"cash_rate":row["cash_rate"] if known else None},**common))
+        low = connection.execute("""SELECT e.entry_id,p.display_name,lp.roster_position,lp.ownership_percentage
+            FROM tournament_lineup_players lp JOIN tournament_entries e ON e.id=lp.entry_pk
+            JOIN players p ON p.id=lp.player_id WHERE e.tournament_id=? AND e.member_id=?
+            AND lp.ownership_percentage<=5 ORDER BY lp.ownership_percentage,e.entry_id,p.display_name LIMIT 1""",
+            (int(best.tournament_id),row["member_id"])).fetchone()
+        if low:
+            facts.append(Fact(fact_type="tournament_low_owned_selection",category="tournament",priority=70,
+                summary=f"{row['display_name']} selected {low[1]} at {low[2]} in entry {low[0]} at {low[3]:.2f}% field ownership.",
+                related_player=low[1],values={"entry_id":low[0],"roster_position":low[2],"ownership_percentage":low[3]},**common))
+    return facts
 
 
 def _fact_sort_key(fact: Fact) -> tuple[Any, ...]:

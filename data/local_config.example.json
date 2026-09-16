@@ -1,6 +1,7 @@
 {
   "database_path": "data/processed/kcdk.sqlite",
   "default_tone": "normal",
+  "h2h_dk_fee_cents": null,
   "members_path": "data/members.csv",
   "season_identifier": "kcdk-2026",
   "season_name": "KCDK 2026",

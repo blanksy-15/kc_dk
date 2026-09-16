@@ -337,8 +337,8 @@ def test_renderers_work_without_authored_assets_and_produce_valid_png(tmp_path):
     )
     assert first.loaded_assets == ()
     assert second.loaded_assets == ()
-    assert first.procedural_skyline_used
-    assert second.procedural_skyline_used
+    assert not first.procedural_skyline_used
+    assert not second.procedural_skyline_used
     assert first.header_artwork is None
     assert second.header_artwork is None
     assert not first.incomplete_prize_data
@@ -367,6 +367,7 @@ def test_renderer_loads_mock_branding_assets_without_stretching(tmp_path):
     result = render_kcdk_standings_png(
         kcdk,
         tmp_path / "branded.png",
+        config=LeaderboardVisualConfig(header_artwork_opacity=0.48),
         season_label="2026 SEASON",
         week_label="Week 4",
         weeks_completed=4,
@@ -432,6 +433,7 @@ def test_invalid_header_artwork_uses_procedural_fallback(tmp_path):
     result = render_kcdk_standings_png(
         kcdk,
         tmp_path / "fallback.png",
+        config=LeaderboardVisualConfig(header_artwork_opacity=0.48),
         season_label="2026 SEASON",
         week_label="Week 4",
         weeks_completed=4,
@@ -466,6 +468,7 @@ def test_authored_project_header_renders_on_both_leaderboards(tmp_path):
     first = render_kcdk_standings_png(
         kcdk,
         tmp_path / "kcdk-header.png",
+        config=LeaderboardVisualConfig(header_artwork_opacity=0.48),
         season_label="2026 SEASON",
         week_label="Week 4",
         weeks_completed=4,
@@ -475,6 +478,7 @@ def test_authored_project_header_renders_on_both_leaderboards(tmp_path):
     second = render_tournament_performance_png(
         tournament,
         tmp_path / "tournament-header.png",
+        config=LeaderboardVisualConfig(header_artwork_opacity=0.48),
         season_label="2026 SEASON",
         week_label="Week 4",
         weeks_completed=4,

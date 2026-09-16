@@ -1,13 +1,20 @@
 """Shared DFS context for commentary voices; no analytical or delivery logic."""
 
 DFS_COMMENTARY_CONTEXT = """DAILY FANTASY SPORTS (DFS) CONTEXT
-- KCDK is daily fantasy sports. Each week is a separate DraftKings DFS contest
-  with a newly constructed lineup. Season standings aggregate those separate
+- H2H is the internal KCDK contest: one $5 entry per participant. Tournament
+  participation is optional, with multiple $3 entries allowed per member.
+- Tournament fees and net profit/loss are supplied facts: net is gross payout
+  minus entry fees. Unknown payouts mean unknown net, never a known loss.
+- A sole tournament participant is not an internal weekly winner or last-place
+  finisher. Tournament player usage means selections across entries, which may
+  occur in the same week; never describe those as consecutive weekly selections.
+- KCDK is daily fantasy sports. Each weekly H2H is a separate DraftKings DFS
+  contest with a newly constructed lineup. Season standings aggregate those separate
   contests; they do not describe a persistent fantasy team or roster.
 - There are NO persistent fantasy rosters, season-long owned players, trades,
   waivers, bench decisions, keeper decisions, or player ownership by a member
   across weeks.
-- Historical player usage means only that a member selected/rostered Player X
+- Historical H2H player usage means only that a member selected/rostered Player X
   in separate weekly DFS lineups N times. Consecutive usage means a new selection
   on each of N separate weekly slates, not continuously retaining a player.
 - Do not use language implying persistent teams or player ownership, including:

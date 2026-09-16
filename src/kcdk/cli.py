@@ -20,6 +20,8 @@ def _weekly_parser(subparsers: argparse._SubParsersAction) -> None:
         "weekly", help="Import, render, and optionally publish one KCDK week."
     )
     parser.add_argument("--csv", required=True, type=Path)
+    parser.add_argument("--h2h-dk-fee-cents", type=int, required=True, help="Actual total H2H DraftKings rake in cents; $5 entrant fee is fixed.")
+    _tournament_arguments(parser)
     parser.add_argument("--season", required=True, dest="season_identifier")
     parser.add_argument("--season-name", required=True)
     parser.add_argument("--week", required=True, dest="week_label")
@@ -66,9 +68,10 @@ def _weekly_runner_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument(
         "--csv",
         type=Path,
-        help="DraftKings CSV path; omit to use the Windows file picker.",
+        help="KCDK_H2H results CSV (one $5 entry per member); omit for the picker.",
     )
     parser.add_argument("--week-number", type=int)
+    _tournament_arguments(parser)
     parser.add_argument(
         "--config",
         type=Path,
@@ -86,6 +89,12 @@ def _weekly_runner_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Allow the confirmation flow to repost an already-published recap.",
     )
     parser.set_defaults(handler=_run_weekly_runner)
+
+
+def _tournament_arguments(parser):
+    parser.add_argument("--tournament-csv", type=Path, help="Optional TOURNAMENT results; $3 per entry, multiple entries allowed.")
+    parser.add_argument("--tournament-payout", type=Path, help="Companion payout CSV: DK place/amount rows or place_from,place_to,payout_cents.")
+    parser.add_argument("--allow-unknown-tournament-payouts", action="store_true", help="Explicitly permit unknown tournament gross/net without a payout file.")
 
 
 def _leaderboard_preview_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -122,6 +131,9 @@ def _run_weekly(arguments: argparse.Namespace) -> int:
             generate_commentary_in_dry_run=arguments.generate_commentary,
             state_store=DiscordStateStore(arguments.state),
             recover_drunk_bot=arguments.recover_drunk_bot,
+            strict_h2h=True,h2h_dk_fee_cents=arguments.h2h_dk_fee_cents,
+            tournament_csv_path=arguments.tournament_csv,tournament_payout_path=arguments.tournament_payout,
+            allow_unknown_tournament_payouts=arguments.allow_unknown_tournament_payouts,
         )
     finally:
         connection.close()
@@ -136,6 +148,8 @@ def _run_weekly_runner(arguments: argparse.Namespace) -> int:
         config_path=arguments.config,
         dry_run=arguments.dry_run,
         repost=arguments.repost,
+        tournament_csv_path=arguments.tournament_csv,tournament_payout_path=arguments.tournament_payout,
+        allow_unknown_tournament_payouts=arguments.allow_unknown_tournament_payouts,
     )
     return 1 if result.status == "blocked" else 0
 
@@ -160,6 +174,8 @@ def build_parser() -> argparse.ArgumentParser:
     _weekly_parser(subparsers)
     _weekly_runner_parser(subparsers)
     _leaderboard_preview_parser(subparsers)
+    from .orchestration_cli import add_parsers
+    add_parsers(subparsers)
     return parser
 
 

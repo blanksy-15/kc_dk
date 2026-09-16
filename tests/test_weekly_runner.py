@@ -3,7 +3,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from kcdk.persistence import connect_database, import_week
+from kcdk.persistence import connect_database, import_h2h
+import pandas as pd
+
+def import_week(*args, **kwargs):
+    return import_h2h(*args, dk_fee_cents=100, **kwargs)
 from kcdk.publishing import DiscordState, DiscordStateStore, PublicationRecord
 from kcdk.weekly_runner import (
     LocalConfigStore,
@@ -22,9 +26,22 @@ MEMBERS = MOCK / "members.csv"
 WEEK_ONE = MOCK / "season_week_1.csv"
 
 
+@pytest.fixture(autouse=True)
+def h2h_fixture(tmp_path, monkeypatch):
+    source = pd.read_csv(MOCK / "season_week_1.csv")
+    members = pd.read_csv(MEMBERS)
+    names = members.loc[members.active.astype(str).str.lower().eq("true"), "draftkings_name"]
+    frame = source.loc[source["Entry Name"].isin(names)].copy()
+    frame["Rank"] = frame.Points.rank(method="min", ascending=False).astype(int)
+    target = tmp_path / "h2h.csv"
+    frame.to_csv(target, index=False)
+    monkeypatch.setattr(__import__(__name__, fromlist=["WEEK_ONE"]), "WEEK_ONE", target)
+
+
 def _config(tmp_path, **overrides):
     values = {
         "season_identifier": "mock-2026",
+        "h2h_dk_fee_cents": 100,
         "season_name": "Mock 2026",
         "season_year": 2026,
         "members_path": str(MEMBERS),
@@ -44,7 +61,7 @@ def _save_config(tmp_path, config):
 
 def test_first_run_config_creation_and_reload(tmp_path):
     path = tmp_path / "local_config.json"
-    answers = iter(("mock-2026", "Mock 2026", "2026", str(MEMBERS), "normal"))
+    answers = iter(("mock-2026", "Mock 2026", "2026", str(MEMBERS), "normal", "100"))
     output = []
 
     result = run_interactive_weekly(
@@ -64,6 +81,7 @@ def test_first_run_config_creation_and_reload(tmp_path):
         members_path=str(MEMBERS),
         default_tone="normal",
         season_year=2026,
+        h2h_dk_fee_cents=100,
     )
     assert "api_key" not in path.read_text(encoding="utf-8").casefold()
     assert "webhook" not in path.read_text(encoding="utf-8").casefold()

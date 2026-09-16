@@ -1,0 +1,39 @@
+{
+  "guild_id": "100000000000000001",
+  "general_channel_id": "100000000000000002",
+  "h2h_channel_id": "100000000000000003",
+  "tournament_channel_id": "100000000000000004",
+  "h2h_leaderboard_channel_id": "100000000000000005",
+  "tournament_leaderboard_channel_id": "100000000000000006",
+  "authorized_poster_ids": ["100000000000000007"],
+  "season_identifier": "kcdk-2026",
+  "season_name": "KCDK 2026",
+  "season_year": 2026,
+  "announcement_week": null,
+  "members_path": "data/members.csv",
+  "database_path": "data/processed/kcdk.sqlite",
+  "state_path": "data/processed/discord_orchestration.sqlite",
+  "h2h_dk_fee_cents": null,
+  "commissioner_enabled": true,
+  "results_drunk_enabled": true,
+  "general_drunk": {
+    "enabled": true,
+    "probability": 0.08,
+    "global_cooldown_seconds": 720,
+    "per_user_cooldown_seconds": 1800,
+    "max_replies_per_hour": 3,
+    "context_message_count": 15,
+    "minimum_message_length": 15,
+    "max_context_chars_per_message": 500,
+    "max_output_tokens": 200,
+    "max_reply_chars": 400,
+    "model": null,
+    "tone": "ruthless",
+    "allow_profanity": true,
+    "announcement_followups": false
+  },
+  "announcement_templates": [
+    "{week}{label} is open. {fee} Head to <#{channel_id}>: {url}",
+    "Commissioner's notice: {week}{label} entries are open. {fee} Join in <#{channel_id}>: {url}"
+  ]
+}

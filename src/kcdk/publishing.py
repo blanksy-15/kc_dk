@@ -24,6 +24,7 @@ from .discord import (
     DISCORD_EMBED_DESCRIPTION_LIMIT,
     DISCORD_EMBED_FIELD_VALUE_LIMIT,
     DiscordConfig,
+    DiscordAttachment,
     DiscordError,
     DiscordMessage,
     DiscordTransport,
@@ -38,6 +39,7 @@ from .leaderboard_delivery import (
     LeaderboardConfig, PreparedLeaderboard, deliver_leaderboard, prepare_leaderboard,
 )
 from .persistence import ImportSummary, import_week, weekly_results
+from .tournaments import TournamentImportSummary
 
 
 DEFAULT_DISCORD_STATE_PATH = Path("data/processed/discord_state.json")
@@ -72,6 +74,7 @@ class DiscordState:
     tournament_leaderboard_message_id: str | None = None
     published_weeks: dict[str, PublicationRecord] = field(default_factory=dict)
     drunk_bot_weeks: dict[str, DrunkBotRecord] = field(default_factory=dict)
+    result_posts: dict[str, dict[str, str]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -85,6 +88,7 @@ class DiscordState:
                 for key, value in sorted(self.published_weeks.items())
             },
             "drunk_bot_weeks": {key: value.to_dict() for key, value in sorted(self.drunk_bot_weeks.items())},
+            "result_posts": self.result_posts,
         }
 
     @classmethod
@@ -118,6 +122,15 @@ class DiscordState:
             drunk_records = {str(key): DrunkBotRecord.from_dict(value) for key, value in drunk_records.items()}
         except (ValueError, TypeError):
             raise PublishingError("Drunk Bot publication state is malformed.") from None
+        result_posts = payload.get("result_posts", {})
+        if not isinstance(result_posts, dict) or any(
+            not isinstance(key, str) or not isinstance(value, dict)
+            or value.get("status") not in {"posting", "posted"}
+            or (value.get("status") == "posted" and
+                (not isinstance(value.get("message_id"), str) or not value["message_id"]))
+            for key, value in result_posts.items()
+        ):
+            raise PublishingError("Contest result publication state is malformed.")
         return cls(
             kcdk_leaderboard_message_id=_optional_id(
                 leaderboards.get("kcdk_message_id")
@@ -127,6 +140,7 @@ class DiscordState:
             ),
             published_weeks=parsed,
             drunk_bot_weeks=drunk_records,
+            result_posts=result_posts,
         )
 
 
@@ -195,7 +209,8 @@ def _is_missing(value: object) -> bool:
 def _money(value: object, *, known: bool = True) -> str:
     if not known or _is_missing(value):
         return "unknown"
-    return f"${float(value):,.2f}"
+    amount = float(value)
+    return f"{'-' if amount < 0 else ''}${abs(amount):,.2f}"
 
 
 def _integer(value: object) -> str:
@@ -234,6 +249,8 @@ def render_weekly_recap(
     report: WeeklyFactReport,
     commentary: StructuredCommentary,
     results: pd.DataFrame,
+    tournament_results: pd.DataFrame | None = None,
+    *, scoreboards: tuple[DiscordAttachment, ...] = (),
 ) -> DiscordMessage:
     """Render one compact weekly recap embed without public fact IDs."""
     if results.empty:
@@ -251,6 +268,14 @@ def render_weekly_recap(
             "inline": False,
         },
     ]
+    if "contest_type" in results and results.contest_type.eq("KCDK_H2H").all():
+        fields[1] = {"name":"H2H gross / fees / net","inline":False,
+                     "value":_truncate("\n".join(f"**{row.display_name}** — gross {_money(row.prize_cents/100)} · fee $5.00 · net {_money(row.net_profit_cents/100)}" for row in results.itertuples()),DISCORD_EMBED_FIELD_VALUE_LIMIT)}
+        if tournament_results is not None and not tournament_results.empty:
+            fields.append({"name":"Tournament performance","inline":False,
+                "value":_truncate("\n".join(f"**{row.display_name}** — {row.entry_count} entries · gross {_money(row.total_money_won)} · fees {_money(row.total_entry_fees)} · net {_money(row.total_net_profit)} · best #{row.best_tournament_rank:,}" for row in tournament_results.itertuples()),DISCORD_EMBED_FIELD_VALUE_LIMIT)})
+    if scoreboards:
+        fields = []
     if report.warnings:
         warning_text = "\n".join(f"• {item}" for item in report.warnings)
         fields.append(
@@ -278,10 +303,71 @@ def render_weekly_recap(
                 "fields": fields,
                 "footer": {"text": report.season_name},
             },
-        ),
+        ) + tuple({"image": {"url": f"attachment://{board.filename}"}} for board in scoreboards),
+        files=scoreboards,
+        replace_attachments=bool(scoreboards),
     )
     message.to_payload()
     return message
+
+
+def render_contest_result_posts(report, results, tournament_results, config):
+    """Factual weekly posts for the two optional contest destinations."""
+    posts = []
+    if (config.h2h_webhook_url and not results.empty and "contest_type" in results
+            and results.contest_type.eq("KCDK_H2H").all()):
+        lines = []
+        for row in results.itertuples(index=False):
+            line = (f"**{int(row.kcdk_finish)}. {row.display_name}** — "
+                    f"{float(row.draftkings_fantasy_points):.2f} pts")
+            if getattr(row, "contest_type", None) == "KCDK_H2H":
+                line += f" · payout {_money(row.prize_cents / 100)}"
+            lines.append(line)
+        posts.append(("h2h_results", config.h2h_webhook_url, DiscordMessage(embeds=({
+            "title": f"{report.week_label} — H2H results",
+            "description": _truncate("\n".join(lines), DISCORD_EMBED_DESCRIPTION_LIMIT),
+            "color": KCDK_COLOR,
+            "footer": {"text": f"{report.season_name} · Season standings in the leaderboards channel"},
+        },))))
+    if config.tournament_webhook_url and not tournament_results.empty:
+        lines = []
+        for row in tournament_results.itertuples(index=False):
+            lines.append(
+                f"**{row.display_name}** — {row.entry_count} entries · "
+                f"{row.average_draftkings_fantasy_points:.2f} avg pts · "
+                f"best #{row.best_tournament_rank:,}\n"
+                f"Gross {_money(row.total_money_won)} · fees {_money(row.total_entry_fees)} · "
+                f"net {_money(row.total_net_profit)}")
+        posts.append(("tournament_results", config.tournament_webhook_url, DiscordMessage(embeds=({
+            "title": f"{report.week_label} — Tournament results",
+            "description": _truncate("\n\n".join(lines), DISCORD_EMBED_DESCRIPTION_LIMIT),
+            "color": TOURNAMENT_COLOR,
+            "footer": {"text": f"{report.season_name} · Season standings in the leaderboards channel"},
+        },))))
+    for _, _, message in posts:
+        message.to_payload()
+    return tuple(posts)
+
+
+def _publish_contest_result_posts(posts, key, state, store, client):
+    """Save intent per destination; ambiguous creates require reconciliation."""
+    for target, webhook, message in posts:
+        post_key = f"{key}:{target}"
+        record = state.result_posts.get(post_key)
+        if record and record["status"] == "posted":
+            continue
+        if record:
+            raise PublishingError(f"{target} has an unresolved send; inspect Discord and reconcile result_posts before retrying.")
+        state.result_posts[post_key] = {"status": "posting"}
+        store.save(state)
+        try:
+            message_id = client.create_message(webhook, message)
+            if not message_id:
+                raise PublishingError(f"{target} returned no message ID; reconcile before retrying.")
+        except DiscordError as exc:
+            raise PublishingError(f"{target} publish failed; inspect Discord before retrying: {exc}") from exc
+        state.result_posts[post_key] = {"status": "posted", "message_id": message_id}
+        store.save(state)
 
 
 def render_kcdk_leaderboard(
@@ -318,10 +404,19 @@ def render_tournament_leaderboard(
     leaderboard: pd.DataFrame, *, season_name: str, through_week: str
 ) -> DiscordMessage:
     if leaderboard.empty:
-        raise PublishingError("Cannot render an empty tournament leaderboard.")
+        return DiscordMessage(embeds=({"title":"TOURNAMENT PERFORMANCE","description":"No KCDK tournament entries recorded.","color":TOURNAMENT_COLOR},))
     lines = []
     incomplete = False
     for row in leaderboard.itertuples(index=False):
+        if hasattr(row,"entry_count"):
+            lines.append(f"`{int(row.tournament_rank):>2}.` **{row.display_name}** — "
+                         f"{row.entry_count} entries · gross {_money(row.total_money_won)} · "
+                         f"fees {_money(row.total_entry_fees)} · net {_money(row.total_net_profit)} · "
+                         f"{row.average_draftkings_fantasy_points:.2f} avg pts · "
+                         f"{row.average_tournament_percentile:.1f}% avg percentile · best #{row.best_tournament_rank:,} · "
+                         f"cash rate {'unknown' if pd.isna(row.cash_rate) else f'{row.cash_rate:.1f}%'}")
+            incomplete = incomplete or not row.prize_data_complete
+            continue
         known_weeks = int(row.weeks_with_prize_data)
         weeks = int(row.weeks_played)
         complete = bool(row.prize_data_complete)
@@ -333,13 +428,13 @@ def render_tournament_leaderboard(
             f"{float(row.average_draftkings_fantasy_points):.2f} avg pts · "
             f"{known_weeks}/{weeks} prize wk"
         )
-    footer = f"{season_name} · through {through_week} · money, then average DK points"
+    footer = f"{season_name} · through {through_week} · {'net profit, then average DK points' if 'entry_count' in leaderboard else 'legacy gross winnings, then average DK points'}"
     if incomplete:
         footer += " · * partial known prize data"
     message = DiscordMessage(
         embeds=(
             {
-                "title": "TOURNAMENT EARNINGS",
+                "title": "TOURNAMENT PERFORMANCE" if "entry_count" in leaderboard else "TOURNAMENT EARNINGS",
                 "description": _truncate(
                     "\n".join(lines), DISCORD_EMBED_DESCRIPTION_LIMIT
                 ),
@@ -397,6 +492,7 @@ class WeeklyPublishResult:
     leaderboards: tuple[PreparedLeaderboard, ...] = ()
     drunk_bot: DrunkBotPlan | None = None
     commissioner_usage: dict[str, object] = field(default_factory=dict)
+    contest_result_messages: dict[str, DiscordMessage] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -418,6 +514,7 @@ class WeeklyPublishResult:
             "text_fallbacks": {item.target: item.fallback.to_payload() for item in self.leaderboards},
             "drunk_bot": self.drunk_bot.to_dict() if self.drunk_bot else None,
             "commissioner_usage": self.commissioner_usage,
+            "contest_results": {target: message.to_payload() for target, message in self.contest_result_messages.items()},
         }
 
 
@@ -511,6 +608,12 @@ def publish_weekly_report(
     )
 
     resolved_discord_config = discord_config or DiscordConfig.from_env(require_webhooks=not dry_run)
+    # Stop unresolved routed sends before any generation or further side effects.
+    for target, destination in (("h2h_results", resolved_discord_config.h2h_webhook_url),
+                                ("tournament_results", resolved_discord_config.tournament_webhook_url)):
+        record = state.result_posts.get(f"{key}:{target}")
+        if not dry_run and destination and record and record["status"] != "posted":
+            raise PublishingError(f"{target} has an unresolved send; inspect Discord and reconcile result_posts before retrying.")
     if not dry_run:
         if (
             resolved_discord_config.weekly_webhook_url is None
@@ -556,7 +659,14 @@ def publish_weekly_report(
     through_week = str(latest[0]["week_label"])
     kcdk = season_leaderboard_with_movement(connection, season_identifier)
     tournament = tournament_leaderboard_with_movement(connection, season_identifier)
-    weekly_message = render_weekly_recap(report, resolved_commentary, week_results)
+    from .tournaments import tournament_aggregates
+    tournament_results = tournament_aggregates(connection,season_identifier,week_label=week_label)
+    from .weekly_scoreboards import prepare_weekly_scoreboards
+    scoreboards = prepare_weekly_scoreboards(week_results, tournament_results,
+        season_name=report.season_name, week_label=week_label, config=image_config)
+    weekly_message = render_weekly_recap(report, resolved_commentary, week_results,
+        tournament_results=tournament_results, scoreboards=scoreboards)
+    result_posts = render_contest_result_posts(report, week_results, tournament_results, resolved_discord_config)
     kcdk_message = render_kcdk_leaderboard(
         kcdk, season_name=report.season_name, through_week=through_week
     )
@@ -580,6 +690,10 @@ def publish_weekly_report(
         state, already_published=already_published, repost=repost
     )
     operations = (
+        *(DiscordOperation(target,
+            "create" if not state.result_posts.get(f"{key}:{target}") else
+            "skip" if state.result_posts[f"{key}:{target}"]["status"] == "posted" else "reconcile",
+            "weekly contest results") for target, _, _ in result_posts),
         operations[2],
         DiscordOperation("drunk_bot", "create" if drunk_plan.would_post_to_discord else "skip", drunk_plan.status),
         *operations[:2],
@@ -602,6 +716,7 @@ def publish_weekly_report(
             leaderboards=prepared,
             drunk_bot=drunk_plan,
             commissioner_usage=commissioner_usage,
+            contest_result_messages={target: message for target, _, message in result_posts},
         )
 
     config = resolved_discord_config
@@ -613,6 +728,7 @@ def publish_weekly_report(
         timeout_seconds=config.timeout_seconds
     )
 
+    _publish_contest_result_posts(result_posts, key, state, store, client)
     weekly_message_ids = known_weekly_message_ids
     if should_publish_week:
         try:
@@ -665,6 +781,7 @@ def publish_weekly_report(
         leaderboards=prepared,
         drunk_bot=drunk_plan,
         commissioner_usage=commissioner_usage,
+        contest_result_messages={target: message for target, _, message in result_posts},
     )
 
 
@@ -672,11 +789,13 @@ def publish_weekly_report(
 class WeeklyWorkflowResult:
     import_summary: ImportSummary
     publication: WeeklyPublishResult
+    tournament_import_summary: TournamentImportSummary | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
             "import": self.import_summary.to_dict(),
             "publication": self.publication.to_dict(),
+            "tournament_import": self.tournament_import_summary.to_dict() if self.tournament_import_summary else None,
         }
 
 
@@ -699,20 +818,46 @@ def run_weekly_workflow(
     state_store: DiscordStateStore | None = None,
     drunk_bot_config: DrunkBotConfig | None = None,
     recover_drunk_bot: bool = False,
+    h2h_dk_fee_cents: int | None = None,
+    strict_h2h: bool = False,
+    tournament_csv_path: str | Path | None = None,
+    tournament_payout_path: str | Path | None = None,
+    allow_unknown_tournament_payouts: bool = False,
+    leaderboard_config: LeaderboardConfig | None = None,
 ) -> WeeklyWorkflowResult:
     """Import one CSV, then render or publish the complete weekly package."""
-    summary = import_week(
-        connection,
-        csv_path,
-        members_path,
-        season_name=season_name,
-        season_identifier=season_identifier,
-        season_year=season_year,
-        week_number=week_number,
-        week_label=week_label,
-        contest_name=contest_name,
-        contest_date=contest_date,
-    )
+    from .tournaments import import_tournament
+    from .persistence import prepare_h2h
+    if strict_h2h:
+        prepare_h2h(csv_path, members_path, h2h_dk_fee_cents)
+    if tournament_payout_path and not tournament_csv_path:
+        raise ValueError("Tournament payout source requires tournament results")
+    if tournament_csv_path and not strict_h2h:
+        raise ValueError("Combined tournament workflow requires explicit H2H mode")
+    tournament_summary = None
+    from .persistence import atomic_import
+    with atomic_import(connection):
+        if tournament_csv_path:
+            if not tournament_payout_path and not allow_unknown_tournament_payouts:
+                raise ValueError("Select a tournament payout CSV or explicitly allow unknown payouts")
+            # Import tournament before commentary. Identity is separate from H2H.
+            tournament_summary = import_tournament(connection,tournament_csv_path,members_path,season_name=season_name,
+                season_identifier=season_identifier,week_label=week_label,week_number=week_number,
+                season_year=season_year,payout_path=tournament_payout_path)
+        summary = import_week(
+            connection,
+            csv_path,
+            members_path,
+            season_name=season_name,
+            season_identifier=season_identifier,
+            season_year=season_year,
+            week_number=week_number,
+            week_label=week_label,
+            contest_name=contest_name,
+            contest_date=contest_date,
+            contest_type="KCDK_H2H" if strict_h2h else "LEGACY",
+            dk_fee_cents=h2h_dk_fee_cents if strict_h2h else None,
+        )
     publication = publish_weekly_report(
         connection,
         season_identifier=season_identifier,
@@ -724,8 +869,9 @@ def run_weekly_workflow(
         state_store=state_store,
         drunk_bot_config=drunk_bot_config,
         recover_drunk_bot=recover_drunk_bot,
+        leaderboard_config=leaderboard_config,
     )
-    return WeeklyWorkflowResult(summary, publication)
+    return WeeklyWorkflowResult(summary, publication, tournament_summary)
 
 
 __all__ = [

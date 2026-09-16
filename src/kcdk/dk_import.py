@@ -8,6 +8,19 @@ from typing import Iterable
 import pandas as pd
 
 REQUIRED_FIELDS = ("rank", "entry_id", "entry_name", "points")
+ENTRY_SUFFIX = re.compile(r" \(([1-9][0-9]*)/([1-9][0-9]*)\)$")
+
+
+def base_username(value: object) -> str:
+    """Strip only DraftKings' terminal entry counter, then apply exact matching."""
+    return ENTRY_SUFFIX.sub("", str(value).strip()).strip().casefold()
+
+
+def normalized_points(value: object) -> float:
+    """DK comparisons use two decimals (Decimal half-up), never raw float noise."""
+    if pd.isna(value):
+        return float("nan")
+    return float(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 _FIELD_ALIASES = {
     "rank": {"rank", "place", "contest_rank"},
     "entry_id": {"entryid", "entry_id", "entry_number", "entrynumber"},
@@ -52,7 +65,7 @@ def parse_money_to_cents(value: object) -> int | None:
         return None
     if negative:
         amount = -amount
-    if amount < 0:
+    if not amount.is_finite() or amount < 0:
         return None
     cents = (amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     return int(cents)
@@ -83,7 +96,7 @@ def normalize_contest(data: pd.DataFrame) -> pd.DataFrame:
     normalized = normalized.loc[:, ~normalized.columns.duplicated()]
     normalized["rank"] = _parse_numeric(normalized["rank"]).astype("Int64")
     normalized["entry_id"] = _parse_numeric(normalized["entry_id"]).astype("Int64")
-    normalized["points"] = _parse_numeric(normalized["points"])
+    normalized["points"] = _parse_numeric(normalized["points"]).map(normalized_points)
     if "drafted_pct" in normalized:
         normalized["drafted_pct"] = _parse_numeric(normalized["drafted_pct"], percentage=True)
     if "fpts" in normalized:
@@ -102,12 +115,16 @@ def contest_result_rows(contest: pd.DataFrame) -> pd.DataFrame:
     table.  Keeping this collapse separate lets lineup parsing evolve without
     changing the season persistence model.
     """
-    return contest.drop_duplicates(subset=["entry_id"], keep="first").copy()
+    # Ownership tables can continue after the last entrant. Keep those rows in
+    # the source frame for player metadata, but exclude them from standings.
+    # Partially populated entrant rows remain visible to import validation.
+    entrants = contest.loc[contest[list(REQUIRED_FIELDS)].notna().any(axis=1)]
+    return entrants.drop_duplicates(subset=["entry_id"], keep="first").copy()
 
 
 def import_contest(path: Path) -> pd.DataFrame:
     """Read and normalize one DraftKings contest CSV."""
-    return normalize_contest(pd.read_csv(path))
+    return normalize_contest(pd.read_csv(path, dtype=str, encoding="utf-8-sig"))
 
 
 def percentile_from_rank(rank: float, total_entries: int) -> float:

@@ -45,6 +45,7 @@ def parse_lineup_text(lineup: object) -> list[tuple[str, str]]:
     if not text:
         return []
 
+    text = re.sub(r"D/ST", "DST", text, flags=re.IGNORECASE)
     if re.search(r"[|;/]", text):
         parsed: list[tuple[str, str]] = []
         for segment in re.split(r"\s*[|;/]\s*", text):
@@ -75,16 +76,19 @@ def _optional_float(value: object) -> float | None:
     return float(value)
 
 
-def player_metadata(contest: pd.DataFrame) -> dict[str, tuple[float | None, float | None]]:
-    """Index the optional side-by-side player table by normalized player name."""
+def player_metadata(contest: pd.DataFrame) -> dict[tuple[str, str], tuple[float | None, float | None]]:
+    """Index only populated metadata rows by player AND role."""
     if "player" not in contest.columns:
         return {}
-    metadata: dict[str, tuple[float | None, float | None]] = {}
-    for row in contest.to_dict("records"):
+    metadata = {}
+    populated = contest.loc[contest["player"].notna()]
+    for row in populated.to_dict("records"):
         name = row.get("player")
         if name is None or pd.isna(name) or not str(name).strip():
             continue
-        metadata[player_key(str(name))] = (
+        role = row.get("roster_position")
+        role = "" if role is None or pd.isna(role) else str(role).strip().upper().replace("D/ST", "DST")
+        metadata[(player_key(str(name)), role)] = (
             _optional_float(row.get("fpts")),
             _optional_float(row.get("drafted_pct")),
         )
@@ -93,7 +97,7 @@ def player_metadata(contest: pd.DataFrame) -> dict[str, tuple[float | None, floa
 
 def parse_member_lineup(
     lineup: object,
-    metadata: dict[str, tuple[float | None, float | None]] | None = None,
+    metadata: dict[tuple[str, str], tuple[float | None, float | None]] | None = None,
 ) -> list[ParsedLineupPlayer]:
     """Parse a member lineup and enrich selections from optional field metadata."""
     metadata = metadata or {}
@@ -104,7 +108,13 @@ def parse_member_lineup(
         if key in seen:
             continue
         seen.add(key)
-        fantasy_points, ownership = metadata.get(key, (None, None))
+        fantasy_points, ownership = metadata.get((key, position), (None, None))
+        if fantasy_points is None and ownership is None and position != "CPT":
+            # Classic FLEX may refer to RB/WR/TE metadata. Never borrow CPT values.
+            candidates = [value for (name_key, role), value in metadata.items()
+                          if name_key == key and role != "CPT"]
+            if len(candidates) == 1:
+                fantasy_points, ownership = candidates[0]
         players.append(
             ParsedLineupPlayer(name, position, fantasy_points, ownership)
         )

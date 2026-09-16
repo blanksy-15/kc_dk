@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from contextlib import contextmanager
+import uuid
 from datetime import UTC, datetime
 import hashlib
 from pathlib import Path
@@ -16,7 +18,7 @@ from .lineups import parse_member_lineup, player_key, player_metadata
 from .members import load_members
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 
@@ -127,6 +129,21 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+@contextmanager
+def atomic_import(connection):
+    """Nestable transactions keep a combined H2H/tournament import atomic."""
+    name = "import_" + uuid.uuid4().hex
+    connection.execute(f"SAVEPOINT {name}")
+    try:
+        yield
+    except BaseException:
+        connection.execute(f"ROLLBACK TO {name}")
+        connection.execute(f"RELEASE {name}")
+        raise
+    else:
+        connection.execute(f"RELEASE {name}")
+
+
 def connect_database(path: str | Path = ":memory:") -> sqlite3.Connection:
     """Open a SQLite database and ensure the current schema exists."""
     database_target = str(path)
@@ -154,11 +171,58 @@ def initialize_database(connection: sqlite3.Connection) -> None:
             CHECK (prize_cents IS NULL OR prize_cents >= 0)
             """
         )
+    # Additive migration: legacy contest/result IDs and economics stay intact.
+    additions = {
+        "contests": {"contest_type": "TEXT NOT NULL DEFAULT 'LEGACY'", "dk_fee_cents": "INTEGER"},
+        "member_results": {"entry_fee_cents": "INTEGER", "net_profit_cents": "INTEGER"},
+    }
+    for table, columns in additions.items():
+        existing_columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+        for column, declaration in columns.items():
+            if column not in existing_columns:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+    from .tournaments import SCHEMA as tournament_schema
+    connection.executescript(tournament_schema)
+    connection.execute("INSERT OR IGNORE INTO schema_versions(version, applied_at) VALUES (2, ?)", (_utc_now(),))
     connection.execute(
         "INSERT OR IGNORE INTO schema_versions(version, applied_at) VALUES (?, ?)",
         (SCHEMA_VERSION, _utc_now()),
     )
     connection.commit()
+
+
+def prepare_h2h(csv_path, members_path, dk_fee_cents):
+    """Validate a genuine one-entry KCDK contest before any writes."""
+    from .dk_import import ENTRY_SUFFIX, base_username
+    if type(dk_fee_cents) is not int or dk_fee_cents < 0:
+        raise ValueError("H2H dk_fee_cents must be configured as a nonnegative integer")
+    contest = import_contest(Path(csv_path))
+    entry_columns = [key for key in ("entry_id","entry_name","rank","points","lineup") if key in contest]
+    if contest[entry_columns].drop_duplicates()["entry_id"].duplicated().any():
+        raise ValueError("Conflicting H2H rows for one EntryId")
+    results = contest_result_rows(contest)
+    if results.empty or results[["rank", "entry_id", "entry_name", "points"]].isna().any().any():
+        raise ValueError("H2H requires valid entry IDs, ranks, usernames and points")
+    if results.entry_name.map(lambda name: bool(ENTRY_SUFFIX.search(str(name).strip()))).any():
+        raise ValueError("H2H does not permit DraftKings multi-entry suffixes")
+    members = load_members(Path(members_path))
+    names = members.draftkings_name.str.strip().str.casefold()
+    if names.duplicated().any() or members.display_name.duplicated().any():
+        raise ValueError("Duplicate H2H member identity")
+    entrants = results.entry_name.map(base_username)
+    if entrants.duplicated().any():
+        raise ValueError("H2H permits exactly one entry per member")
+    if not entrants.isin(names).any():
+        raise ValueError("Zero active KCDK members matched this contest")
+    if not entrants.isin(names).all():
+        raise ValueError("H2H contains non-KCDK entrants; select the H2H CSV, not a tournament")
+    if not results['rank'].between(1, len(results)).all():
+        raise ValueError("Invalid H2H rank")
+    if dk_fee_cents > len(results)*500:
+        raise ValueError("H2H DraftKings fee exceeds the gross pool")
+    if results.points.eq(results.points.max()).sum() != 1:
+        raise ValueError("H2H requires one winner; tied top scores need an explicit payout policy")
+    return contest, members, results
 
 
 def _normalized_name(value: str) -> str:
@@ -290,6 +354,8 @@ def import_week(
     contest_name: str | None = None,
     contest_date: str | None = None,
     replace: bool = False,
+    contest_type: str = "LEGACY",
+    dk_fee_cents: int | None = None,
 ) -> ImportSummary:
     """Normalize, match, rank, parse, and atomically persist one contest week.
 
@@ -301,11 +367,23 @@ def import_week(
     if not label:
         raise ValueError("week_number or week_label is required")
 
-    contest = import_contest(source_path)
+    if contest_type not in {"LEGACY", "KCDK_H2H"}:
+        raise ValueError("Use import_tournament for TOURNAMENT contests")
+    contest = (prepare_h2h(source_path, members_path, dk_fee_cents)[0]
+               if contest_type == "KCDK_H2H" else import_contest(source_path))
     results = contest_result_rows(contest)
     members = load_members(Path(members_path), active_only=False)
     active_members = members.loc[members["active"]].copy()
     standings = weekly_standings(contest, active_members)
+    if standings.empty:
+        raise ValueError("Zero active KCDK members matched this contest")
+    if contest_type == "KCDK_H2H":
+        winner_points = results.points.max()
+        contest["prize_cents"] = pd.array([
+            len(results)*500-dk_fee_cents if points == winner_points else 0
+            for points in contest.points
+        ], dtype="Int64")
+        results = contest_result_rows(contest)
     fingerprint = _fingerprint(source_path)
     warnings: list[str] = []
     has_prize_field = "prize_cents" in contest.columns
@@ -317,11 +395,14 @@ def import_week(
         ].tolist()
         raise ValueError(f"Multiple entries matched the same KCDK member: {duplicates}")
 
-    with connection:
+    with atomic_import(connection):
         known_season = connection.execute(
             "SELECT id FROM seasons WHERE identifier = ?", (season_identifier,)
         ).fetchone()
         if known_season:
+            other = connection.execute("SELECT id FROM contests WHERE season_id=? AND source_fingerprint=? AND week_label<>?", (known_season["id"],fingerprint,label)).fetchone()
+            if other:
+                raise ValueError("Source already belongs to a different week; replacement cannot move it")
             existing = connection.execute(
                 """
                 SELECT * FROM contests
@@ -329,7 +410,9 @@ def import_week(
                 """,
                 (known_season["id"], label, fingerprint),
             ).fetchone()
-            if existing and existing["source_fingerprint"] == fingerprint:
+            if (existing and existing["source_fingerprint"] == fingerprint
+                    and existing["contest_type"] == contest_type
+                    and existing["dk_fee_cents"] == dk_fee_cents):
                 return _existing_summary(connection, existing, season_name)
         season_id = _ensure_season(
             connection,
@@ -356,12 +439,13 @@ def import_week(
         cursor = connection.execute(
             """
             INSERT INTO contests(
-                season_id, week_number, week_label, draftkings_contest_id,
+                id, season_id, week_number, week_label, draftkings_contest_id,
                 contest_name, contest_date, total_tournament_entries,
                 source_filename, source_fingerprint, imported_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                existing["id"] if existing else None,
                 season_id,
                 week_number,
                 label,
@@ -375,10 +459,12 @@ def import_week(
             ),
         )
         contest_id = int(cursor.lastrowid)
+        connection.execute("UPDATE contests SET contest_type=?, dk_fee_cents=? WHERE id=?",
+                           (contest_type, dk_fee_cents, contest_id))
 
         result_by_entry = {
             _normalized_name(str(row["entry_name"])): row
-            for _, row in results.iterrows()
+            for _, row in results.loc[results.entry_name.isin(standings.draftkings_entry_name)].iterrows()
         }
         metadata = player_metadata(contest)
         lineup_count = 0
@@ -416,6 +502,8 @@ def import_week(
                     str(standing["draftkings_entry_name"]),
                 ),
             )
+            if contest_type == "KCDK_H2H":
+                connection.execute("UPDATE member_results SET entry_fee_cents=500, net_profit_cents=prize_cents-500 WHERE contest_id=? AND member_id=?", (contest_id, member_id))
             parsed = parse_member_lineup(source_row.get("lineup"), metadata)
             if not parsed:
                 unparsed_members.append(str(standing["display_name"]))
@@ -481,6 +569,12 @@ def import_week(
     )
 
 
+def import_h2h(connection, csv_path, members_path, *, dk_fee_cents, **kwargs):
+    """Explicit $5 single-entry H2H import; legacy import_week remains available."""
+    return import_week(connection, csv_path, members_path, contest_type="KCDK_H2H",
+                       dk_fee_cents=dk_fee_cents, **kwargs)
+
+
 def weekly_results(
     connection: sqlite3.Connection, season_identifier: str, week_label: str | None = None
 ) -> pd.DataFrame:
@@ -491,9 +585,10 @@ def weekly_results(
         week_clause = "AND c.week_label = ?"
         parameters.append(week_label)
     query = f"""
-        SELECT c.week_number, c.week_label, m.display_name, r.kcdk_finish,
+        SELECT c.week_number, c.week_label, c.contest_type, m.display_name, r.kcdk_finish,
                r.draftkings_overall_rank, r.draftkings_fantasy_points,
-               r.tournament_percentile, r.prize_cents, r.entry_id, r.entry_name
+               r.tournament_percentile, r.prize_cents, r.entry_id, r.entry_name,
+               r.entry_fee_cents, r.net_profit_cents
         FROM member_results r
         JOIN contests c ON c.id = r.contest_id
         JOIN seasons s ON s.id = c.season_id

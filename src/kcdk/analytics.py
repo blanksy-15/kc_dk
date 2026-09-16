@@ -20,7 +20,7 @@ KCDK_LEADERBOARD_TIEBREAKERS = (
 LEADERBOARD_TIEBREAKERS = KCDK_LEADERBOARD_TIEBREAKERS
 
 TOURNAMENT_LEADERBOARD_TIEBREAKERS = (
-    ("total_money_won", False),
+    ("total_net_profit", False),
     ("average_draftkings_fantasy_points", False),
     ("average_tournament_percentile", False),
     ("display_name", True),
@@ -46,6 +46,9 @@ def sort_leaderboard(leaderboard: pd.DataFrame) -> pd.DataFrame:
 def sort_tournament_leaderboard(leaderboard: pd.DataFrame) -> pd.DataFrame:
     """Apply the separately configurable tournament-performance ordering."""
     sort_columns = [item[0] for item in TOURNAMENT_LEADERBOARD_TIEBREAKERS]
+    # Explicit legacy presentation compatibility: historical fees are unknown.
+    if "total_net_profit" not in leaderboard:
+        sort_columns[0] = "total_money_won"
     ascending = [item[1] for item in TOURNAMENT_LEADERBOARD_TIEBREAKERS]
     ranked = leaderboard.sort_values(
         sort_columns, ascending=ascending, kind="stable", na_position="last"
@@ -202,6 +205,28 @@ def tournament_leaderboard_with_movement(
     through_contest_id: int | None = None,
 ) -> pd.DataFrame:
     """Return official tournament standings plus independent rank movement."""
+    if uses_typed_contests(connection, season_identifier):
+        from .tournaments import tournament_aggregates
+        limit = None
+        if through_contest_id is not None:
+            row = connection.execute("SELECT c.week_number FROM contests c JOIN seasons s ON s.id=c.season_id WHERE c.id=? AND s.identifier=?", (through_contest_id,season_identifier)).fetchone()
+            if row is None:
+                raise ValueError("Unknown H2H contest")
+            limit = row[0]
+        weeks = [row[0] for row in connection.execute("SELECT t.week_number FROM tournaments t JOIN seasons s ON s.id=t.season_id WHERE s.identifier=? AND (? IS NULL OR t.week_number<=?) ORDER BY t.week_number", (season_identifier,limit,limit))]
+        current = tournament_aggregates(connection, season_identifier, through_week_number=limit)
+        previous = tournament_aggregates(connection, season_identifier, through_week_number=weeks[-2]) if len(weeks)>1 else None
+        movement = add_rank_movement(current, previous, rank_column="tournament_rank")
+        if len(weeks)>1:
+            from .tournaments import tournament_entries
+            entries = tournament_entries(connection,season_identifier,through_week_number=limit)
+            present = set(entries.loc[entries.week_number.eq(weeks[-1]),"display_name"])
+            prior = set(entries.loc[entries.week_number.eq(weeks[-2]),"display_name"])
+            returning = movement.display_name.isin(present-prior)
+            movement.loc[returning,"previous_rank"] = pd.NA
+            movement.loc[returning,"movement_delta"] = pd.NA
+            movement.loc[returning,"movement_status"] = MOVEMENT_NEW
+        return movement
     current_id, previous_id = _current_and_previous_contest_ids(
         connection, season_identifier, through_contest_id
     )
@@ -392,7 +417,7 @@ def _known_cash_rate(values: pd.Series) -> float:
     return float(values.gt(0).sum()) / known * 100.0
 
 
-def tournament_performance_leaderboard(
+def legacy_tournament_performance_leaderboard(
     connection: sqlite3.Connection,
     season_identifier: str,
     through_contest_id: int | None = None,
@@ -443,6 +468,27 @@ def tournament_performance_leaderboard(
     leaderboard["cashes"] = leaderboard["cashes"].astype("Int64")
     leaderboard = sort_tournament_leaderboard(leaderboard)
     return leaderboard[columns]
+
+
+def uses_typed_contests(connection, season_identifier):
+    return bool(connection.execute("""SELECT 1 FROM seasons s WHERE s.identifier=? AND
+        (EXISTS(SELECT 1 FROM tournaments t WHERE t.season_id=s.id)
+         OR EXISTS(SELECT 1 FROM contests c WHERE c.season_id=s.id AND c.contest_type='KCDK_H2H'))""",
+        (season_identifier,)).fetchone())
+
+
+def tournament_performance_leaderboard(connection, season_identifier, through_contest_id=None):
+    """Typed seasons use tournament entries exclusively; legacy-only views stay readable."""
+    if not uses_typed_contests(connection, season_identifier):
+        return legacy_tournament_performance_leaderboard(connection, season_identifier, through_contest_id)
+    from .tournaments import tournament_aggregates
+    limit = None
+    if through_contest_id is not None:
+        row = connection.execute("SELECT c.week_number FROM contests c JOIN seasons s ON s.id=c.season_id WHERE c.id=? AND s.identifier=?", (through_contest_id,season_identifier)).fetchone()
+        if row is None:
+            raise ValueError("Unknown H2H contest")
+        limit = row[0]
+    return tournament_aggregates(connection, season_identifier, through_week_number=limit)
 
 
 def _usage_rows(connection: sqlite3.Connection, season_identifier: str) -> pd.DataFrame:

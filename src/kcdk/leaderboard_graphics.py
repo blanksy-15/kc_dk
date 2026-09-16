@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import random
 from typing import Iterable, Sequence
@@ -52,7 +52,7 @@ class LeaderboardVisualConfig:
     callout_label_font_size: int = 14
     callout_value_font_size: int = 20
     background_color: tuple[int, int, int] = (18, 19, 20)
-    header_color: tuple[int, int, int] = (25, 26, 27)
+    header_color: tuple[int, int, int] = (0, 0, 0)
     orange: tuple[int, int, int] = (243, 113, 33)
     green: tuple[int, int, int] = (55, 181, 111)
     decline_color: tuple[int, int, int] = (222, 93, 79)
@@ -80,7 +80,7 @@ class LeaderboardVisualConfig:
     header_artwork_scale: float = 0.72
     header_artwork_x_offset: int = 0
     header_artwork_y_offset: int = -15
-    header_artwork_opacity: float = 0.48
+    header_artwork_opacity: float = 0.0
     header_artwork_right_anchor: bool = True
     background_art_opacity: float = 0.28
     cell_padding: int = 12
@@ -304,7 +304,7 @@ def format_currency(value: object, *, complete: bool = True) -> str:
     if value is None or pd.isna(value):
         return "—"
     amount = float(value)
-    formatted = f"${amount:,.2f}"
+    formatted = f"{'-' if amount < 0 else ''}${abs(amount):,.2f}"
     return formatted if complete else formatted + "*"
 
 
@@ -453,7 +453,15 @@ def _apply_branding(
 
     header_artwork = None
     procedural_skyline_used = False
-    if assets.header.is_file():
+    if config.header_artwork_opacity == 0:
+        # Keep the plain header free of background art and canvas texture too.
+        ImageDraw.Draw(image).rectangle(
+            (config.outer_margin, config.outer_margin,
+             config.canvas_width - config.outer_margin,
+             config.outer_margin + config.header_height),
+            fill=(*config.header_color, 255),
+        )
+    elif assets.header.is_file():
         try:
             with Image.open(assets.header) as source:
                 header_artwork = _composite_header_artwork(image, source, config)
@@ -718,6 +726,7 @@ def _draw_footer(
     incomplete: bool,
     config: LeaderboardVisualConfig,
     fonts: _FontSet,
+    weekly_only: bool = False,
 ) -> None:
     bottom = top + config.footer_height
     draw.rectangle(
@@ -725,9 +734,11 @@ def _draw_footer(
         fill=(20, 21, 22),
     )
     summary = (
-        f"{week_label.upper()}   •   {member_count} KCDK MEMBERS   •   "
+        f"{week_label.upper()}   •   {member_count} KCDK MEMBER{'S' if member_count != 1 else ''}   •   "
         f"{weeks_completed} WEEK{'S' if weeks_completed != 1 else ''} COMPLETED"
     )
+    if weekly_only:
+        summary = f"{week_label.upper()}   ·   {member_count} KCDK MEMBERS   ·   THIS WEEK ONLY"
     draw.text(
         (config.outer_margin + config.cell_padding, top + 16),
         summary,
@@ -844,6 +855,17 @@ def build_tournament_visual_rows(
     for record in data.to_dict("records"):
         complete = _prize_complete(record.get("prize_data_complete", True))
         incomplete = incomplete or not complete
+        if "entry_count" in record:
+            rows.append({"rank":int(record["tournament_rank"]),
+                "movement":format_movement(record.get("movement_status"),record.get("movement_delta"),config),
+                "movement_status":record.get("movement_status",MOVEMENT_NEW),"player":record["display_name"],
+                "values":(str(record["entry_count"]),format_currency(record.get("total_money_won")),
+                          format_currency(record["total_entry_fees"]),format_currency(record.get("total_net_profit")),
+                          f"{record['average_draftkings_fantasy_points']:.2f}",f"{record['average_tournament_percentile']:.1f}%",
+                          f"{record['best_tournament_rank']:,}",
+                          "—" if pd.isna(record.get("cash_rate")) else f"{record['cash_rate']:.1f}%"),
+                "green_column":None})
+            continue
         rows.append(
             {
                 "rank": _as_int(record.get("tournament_rank")),
@@ -885,6 +907,7 @@ def _render(
     callouts: Iterable[LeaderboardCallout] = (),
     config: LeaderboardVisualConfig | None = None,
     assets: BrandingAssetPaths | None = None,
+    weekly_only: bool = False,
 ) -> RenderedLeaderboard:
     style = config or LeaderboardVisualConfig()
     asset_paths = assets or BrandingAssetPaths()
@@ -926,6 +949,7 @@ def _render(
         incomplete=incomplete,
         config=style,
         fonts=fonts,
+        weekly_only=weekly_only,
     )
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -987,11 +1011,15 @@ def render_tournament_performance_png(
     assets: BrandingAssetPaths | None = None,
 ) -> RenderedLeaderboard:
     style = config or LeaderboardVisualConfig()
+    typed = "entry_count" in leaderboard
+    if typed:
+        style = replace(style, tournament_column_widths=(55,85,300,65,135,100,135,105,115,115,102),
+                        column_font_size=16,row_font_size=21)
     return _render(
         leaderboard,
         output_path,
         title="KCDK TOURNAMENT PERFORMANCE",
-        headers=TOURNAMENT_COLUMN_HEADERS,
+        headers=("RK","MOVE","PLAYER","ENT","GROSS","FEES","NET","AVG PTS","AVG PCTL","BEST RK","CASH %") if typed else TOURNAMENT_COLUMN_HEADERS,
         widths=style.tournament_column_widths,
         row_builder=build_tournament_visual_rows,
         season_label=season_label,

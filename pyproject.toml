@@ -15,6 +15,9 @@ dependencies = [
     "python-dotenv>=1.0,<2.0",
 ]
 
+[project.optional-dependencies]
+discord = ["discord.py>=2.5,<3.0"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

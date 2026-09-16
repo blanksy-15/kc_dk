@@ -1,0 +1,62 @@
+Rank,EntryId,EntryName,TimeRemaining,Points,Lineup,,Player,Roster Position,%Drafted,FPTS
+1,5250615338,austin.schober,0,176.66,DST Jets  FLEX Jahmyr Gibbs QB Patrick Mahomes RB De'Von Achane RB Kenneth Walker III TE Travis Kelce WR George Pickens WR Brian Thomas Jr. WR Jalen Coker,,Joe Burrow,QB,30.00%,15.16
+2,5248623102,ecastillo15,0,161.20001,DST Lions  FLEX Saquon Barkley QB Trevor Lawrence RB Javonte Williams RB Cam Skattebo TE Isaiah Likely WR Tetairoa McMillan WR Ladd McConkey WR Parker Washington,,George Pickens,WR,30.00%,5.8
+3,5253664366,sesuman,0,143.45999,DST Titans  FLEX Jakobi Meyers QB Justin Herbert RB Jahmyr Gibbs RB Omarion Hampton TE Michael Mayer WR Chris Olave WR Ladd McConkey WR Luther Burden III,,Tetairoa McMillan,WR,30.00%,11.5
+4,5253229589,slayer44,0,137.45999,DST Jaguars  FLEX Omarion Hampton QB Joe Burrow RB Jahmyr Gibbs RB Bucky Irving TE Michael Mayer WR Ja'Marr Chase WR Michael Pittman Jr. WR Devaughn Vele,,De'Von Achane,RB,30.00%,10.6
+5,5247661156,bschobs,0,128.22,DST Raiders  FLEX Derrick Henry QB Kyler Murray RB Cam Skattebo RB J.K. Dobbins TE Travis Kelce WR Justin Jefferson WR George Pickens WR Tetairoa McMillan,,Saquon Barkley,RB,20.00%,9
+6,5253034314,beantowncat22,0,123.74,DST Vikings  FLEX Jahmyr Gibbs QB Baker Mayfield RB De'Von Achane RB Saquon Barkley TE Jake Ferguson WR Emeka Egbuka WR Alec Pierce WR Devaughn Vele,,Javonte Williams,RB,20.00%,24.2
+7,5253883253,DCB38,0,116.600006,DST Jets  FLEX Cam Skattebo QB Trevor Lawrence RB Jonathan Taylor RB De'Von Achane TE Mark Andrews WR George Pickens WR Tetairoa McMillan WR Malachi Fields,,Ja'Marr Chase,WR,20.00%,3.2
+8,5247660282,tystrek20,0,112.46001,DST Jaguars  FLEX Tyler Warren QB Joe Burrow RB Saquon Barkley RB Javonte Williams TE Dallas Goedert WR Ja'Marr Chase WR Garrett Wilson WR Nick Westbrook-Ikhine,,Jaguars ,DST,20.00%,13
+9,5250828353,christina.webb,0,101.060005,DST Lions  FLEX Bucky Irving QB Joe Burrow RB Chase Brown RB Omarion Hampton TE Sam LaPorta WR Terry McLaurin WR Marvin Harrison Jr. WR Khalil Shakir,,Kyler Murray,QB,20.00%,0.62
+10,5249375892,Mariogamermlg,0,76.520004,DST Titans  FLEX Bijan Robinson QB Kyler Murray RB Quinshon Judkins RB Aaron Jones Sr. TE Sam LaPorta WR Drake London WR Tee Higgins WR Terry McLaurin,,Cam Skattebo,RB,20.00%,14.1
+,,,,,,,Travis Kelce,TE,20.00%,10.1
+,,,,,,,Trevor Lawrence,QB,20.00%,26.1
+,,,,,,,Ladd McConkey,WR,20.00%,19.2
+,,,,,,,Lions ,DST,20.00%,10
+,,,,,,,Terry McLaurin,WR,20.00%,3.4
+,,,,,,,Sam LaPorta,TE,20.00%,9.8
+,,,,,,,Titans ,DST,20.00%,0
+,,,,,,,Jahmyr Gibbs,FLEX,20.00%,37.6
+,,,,,,,Jets ,DST,20.00%,9
+,,,,,,,Omarion Hampton,RB,20.00%,9.3
+,,,,,,,Devaughn Vele,WR,20.00%,19.9
+,,,,,,,Michael Mayer,TE,20.00%,9.2
+,,,,,,,Garrett Wilson,WR,10.00%,13.9
+,,,,,,,Nick Westbrook-Ikhine,WR,10.00%,0
+,,,,,,,Tyler Warren,FLEX,10.00%,10.3
+,,,,,,,Dallas Goedert,TE,10.00%,23.7
+,,,,,,,Derrick Henry,FLEX,10.00%,38.3
+,,,,,,,J.K. Dobbins,RB,10.00%,3.6
+,,,,,,,Justin Jefferson,WR,10.00%,31.2
+,,,,,,,Raiders ,DST,10.00%,13
+,,,,,,,Saquon Barkley,FLEX,10.00%,9
+,,,,,,,Parker Washington,WR,10.00%,19.3
+,,,,,,,Isaiah Likely,TE,10.00%,27.8
+,,,,,,,Bijan Robinson,FLEX,10.00%,31.3
+,,,,,,,Quinshon Judkins,RB,10.00%,7
+,,,,,,,Aaron Jones Sr.,RB,10.00%,10
+,,,,,,,Drake London,WR,10.00%,5.5
+,,,,,,,Tee Higgins,WR,10.00%,8.9
+,,,,,,,Patrick Mahomes,QB,10.00%,22.66
+,,,,,,,Kenneth Walker III,RB,10.00%,37.1
+,,,,,,,Brian Thomas Jr.,WR,10.00%,7
+,,,,,,,Jalen Coker,WR,10.00%,36.8
+,,,,,,,Chase Brown,RB,10.00%,18.8
+,,,,,,,Bucky Irving,FLEX,10.00%,21.3
+,,,,,,,Marvin Harrison Jr.,WR,10.00%,4.3
+,,,,,,,Khalil Shakir,WR,10.00%,9
+,,,,,,,Baker Mayfield,QB,10.00%,14.64
+,,,,,,,Emeka Egbuka,WR,10.00%,11.3
+,,,,,,,Alec Pierce,WR,10.00%,10.1
+,,,,,,,Jake Ferguson,TE,10.00%,2.6
+,,,,,,,Vikings ,DST,10.00%,8
+,,,,,,,Omarion Hampton,FLEX,10.00%,9.3
+,,,,,,,Michael Pittman Jr.,WR,10.00%,8.8
+,,,,,,,Justin Herbert,QB,10.00%,14.26
+,,,,,,,Chris Olave,WR,10.00%,31.2
+,,,,,,,Luther Burden III,WR,10.00%,10.5
+,,,,,,,Jakobi Meyers,FLEX,10.00%,12.2
+,,,,,,,Jonathan Taylor,RB,10.00%,26.1
+,,,,,,,Cam Skattebo,FLEX,10.00%,14.1
+,,,,,,,Malachi Fields,WR,10.00%,4.5
+,,,,,,,Mark Andrews,TE,10.00%,8.9

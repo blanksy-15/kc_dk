@@ -18,14 +18,53 @@ The provisional deterministic tiebreakers are isolated in `kcdk.analytics.KCDK_L
 
 ### Tournament standings: DraftKings tournament performance
 
-The separate tournament-performance leaderboard measures results in the larger DraftKings fields. Its ordering is isolated in `kcdk.analytics.TOURNAMENT_LEADERBOARD_TIEBREAKERS`:
+The separate tournament-performance leaderboard aggregates every KCDK entry in external DraftKings tournaments. H2H remains the internal single-entry contest. Its ordering is isolated in `kcdk.analytics.TOURNAMENT_LEADERBOARD_TIEBREAKERS`:
 
-1. Higher total money won
+1. Higher total net tournament profit/loss (gross payouts minus $3 per entry)
 2. Higher average DraftKings fantasy points
 3. Higher average tournament percentile
 4. Display name alphabetically
 
 These standings are not an alternate calculation of the internal KCDK leaderboard. Both are returned independently.
+
+## H2H and tournament inputs (schema 3)
+
+Normal weeks now accept an internal **KCDK_H2H** CSV plus optional **TOURNAMENT**
+results and a companion tournament payout CSV. H2H is one $5 entry per participating
+member; configure the actual total rake as `h2h_dk_fee_cents` (no assumed value).
+Tournament members may enter multiple $3 lineups. Gross is payout, fees are $3 per
+entry, and net is gross minus fees. Two non-cashing entries therefore have $0 gross,
+$6 fees and **-$6 net**. Tournament leaderboards rank by net, average points,
+average percentile, then name. Missing payouts remain unknown.
+
+Payouts support the supplied alternating DK place/range and dollar rows, or a
+`place_from,place_to,payout_cents` header table. A valid payout file makes unpaid
+ranks known zero. Invalid/overlapping tiers are rejected.
+
+```powershell
+python -m kcdk weekly-runner --csv path\h2h.csv `
+  --tournament-csv path\tournament.csv --tournament-payout path\payout.csv `
+  --week-number 1 --dry-run
+```
+
+The picker offers all three inputs; tournament participation is optional. Omit both
+tournament paths when there was no tournament. Use
+`--allow-unknown-tournament-payouts` explicitly if payout data is unavailable.
+Runner dry runs use temporary DB/PNG files. Scriptable `weekly --dry-run` writes to
+its selected database and now requires `--h2h-dk-fee-cents`.
+
+Read [the model, migration, economics and compatibility guide](docs/contest-model.md).
+Existing databases migrate additively; legacy contests retain their historical
+prizes and unknown fees. Legacy-only gross-based views remain available, while
+typed seasons use only explicit tournament entries for tournament performance.
+The legacy mock examples below describe compatibility workflows, not production
+H2H input: their external entrants are intentionally rejected by the new H2H CLI.
+
+Offline real-file smoke (temporary member config and database, no APIs):
+
+```powershell
+.\.venv\Scripts\python.exe scripts\smoke_tournament.py
+```
 
 ## Architecture
 
@@ -76,6 +115,37 @@ python -m pytest
 ```
 
 ## Interactive Windows weekly runner
+
+For the streamlined General + Leaderboards setup, leave
+`DISCORD_H2H_WEBHOOK_URL` and `DISCORD_TOURNAMENT_WEBHOOK_URL` blank.
+General receives Dr. Glazenuts's recap with both weekly scoreboard images and
+Slabtrong's eligible commentary. Leaderboards receives both persistent season
+boards. H2H and tournament CSVs are still imported normally; no separate weekly
+result channels are needed. Persona prompts direct members to these two places.
+
+The optional `DISCORD_H2H_WEBHOOK_URL` and `DISCORD_TOURNAMENT_WEBHOOK_URL`
+settings add separate factual weekly result posts in their respective channels.
+`DISCORD_WEEKLY_WEBHOOK_URL` is Dr. Glazenuts's Commissioner recap destination;
+`DISCORD_DRUNK_WEBHOOK_URL` is Slabtrong's optional roast destination. Both can
+point to General. `DISCORD_LEADERBOARD_WEBHOOK_URL` receives both persistent
+season leaderboard images. These settings belong only in ignored `.env`.
+The runner needs no bot token for this webhook flow.
+
+Each contest result post records intent and its confirmed message ID in
+`result_posts` in the existing local Discord state. Exact reruns skip completed
+posts, including when a later destination fails; `--repost` applies only to the
+Commissioner recap. An interrupted/failed result send remains `posting` and
+blocks another live attempt until reconciled: inspect the destination first,
+then either record `status: "posted"` with the actual `message_id`, or remove
+only that result's entry after confirming that no message exists. Never erase
+the entire state. Dry runs show both result messages and perform no sends.
+
+Dr. Glazenuts's version 7 prompt lavishes broadcast-style praise on fact-supported
+weekly standouts, with occasional moderate adult innuendo and non-graphic double entendres. Slabtrong's separate version 5 prompt delivers sharp, specific
+fantasy-performance roasts when the existing eligibility rules qualify a week.
+Both weave invitations to check the results or leaderboards into their prose,
+without inventing channel links or statistics. The optional listener's Slabtrong
+conversation prompt is version 3; webhooks alone do not listen to General chat.
 
 For the normal weekly operator workflow, double-click `Run KCDK Weekly.bat` in
 the repository root. The launcher uses only this project's
@@ -129,7 +199,7 @@ The Pillow renderer produces two matching, fixed-width graphics without
 changing analytical rank order:
 
 - `KCDK SEASON STANDINGS`, ranked by the official average-finish rules.
-- `KCDK TOURNAMENT PERFORMANCE`, ranked by money, average DraftKings points,
+- `KCDK TOURNAMENT PERFORMANCE`, ranked by net profit, average DraftKings points,
   average tournament percentile, and display name.
 
 Both use a 1,400 px canvas width, 158 px header, 52 px fixed rows, and 124 px
@@ -158,7 +228,10 @@ from analytics; the drawing layer does not invent them.
 
 The authored `assets/branding/kcdk_logo.png` is used by default and contained
 within the configured logo region without stretching. Its RGBA channel is
-preserved. The matching `assets/branding/leaderboard_header.png` is scaled
+preserved. Both boards default to a plain black header behind the logo and text.
+Header artwork and the fallback skyline are disabled at the default
+`header_artwork_opacity=0`. When explicitly enabled with a positive opacity,
+the optional `assets/branding/leaderboard_header.png` is scaled
 without distortion, right-anchored, and cropped to the header behind the
 logo/title/subtitle. Scale, X/Y offset, opacity, and anchoring are centralized
 in `LeaderboardVisualConfig`. A replacement RGBA file will preserve its alpha
@@ -168,7 +241,7 @@ Another optional authored asset can be placed in `assets/branding/`:
 - `leaderboard_background.png`
 
 Aspect ratios are preserved through contain/crop operations. Missing or
-unreadable header artwork is not an error: the renderer falls back to its
+unreadable header artwork, when enabled, is not an error: the renderer falls back to its
 restrained procedural skyline instead, but never draws that skyline underneath
 successfully loaded header artwork. It also supplies a KCDK mark and
 deterministic broadcast-style texture when needed. Fonts are configurable
@@ -293,8 +366,8 @@ one short message, only when Python finds strong existing facts. It never decide
 what happened or whether a week qualifies.
 
 The layers are separate: `facts.py` → `drunk_bot.py` eligibility →
-`drunk_bot_prompt.py` (prompt version `2`) → `drunk_bot_commentary.py` structured
-generation → `drunk_bot_publishing.py` state/delivery. Both prompts are version `2`
+`drunk_bot_prompt.py` (prompt version `5`) → `drunk_bot_commentary.py` structured
+generation → `drunk_bot_publishing.py` state/delivery. The Commissioner prompt is version `7` and the Drunk Bot prompt is version `5`;
 and share explicit weekly DFS context: every contest has a new lineup, and
 historical player usage means repeated selection across separate weekly contests,
 never persistent rosters or player ownership. Their separate voices remain intact.
@@ -421,12 +494,18 @@ The `--live` and `--post` options are mutually exclusive. Tests mock all live ca
 
 ## Discord weekly publishing
 
+For typed H2H weeks in image mode, the Commissioner's recap includes weekly H2H
+and tournament scoreboard images instead of the long text result/economics lists.
+The commentary and relevant data notes remain. Each scoreboard uses only the
+requested week's results; the separate persistent season boards remain cumulative.
+Text mode retains the text lists. Scoreboards use the same black header and logo.
+
 The normal publishing flow keeps importing, analytics, fact generation, OpenAI commentary, Discord rendering, webhook transport, and local publication state separate. The weekly-results webhook receives one new recap containing the week label, Commissioner Report, compact internal results, tournament rank/earnings highlights, and completeness notes only when relevant. Normal public output never includes internal fact IDs.
 
 The leaderboard webhook owns exactly two persistent messages:
 
 1. `KCDK Season Standings`, ranked by average weekly KCDK finish.
-2. `KCDK Tournament Performance`, ranked by known winnings and then average DraftKings points.
+2. `KCDK Tournament Performance`, ranked by net profit and then average DraftKings points.
 
 Image mode is the default. Every publishing run calculates current standings and
 independent rank movement from the database and uses the existing branded renderer:
@@ -460,9 +539,10 @@ safe exception type. Validation snapshots the bytes to avoid uploading a later
 overwrite of the generated file.
 
 Branding uses `assets/branding/kcdk_logo.png` when present. Authored
-`assets/branding/leaderboard_header.png` is optional; missing/unreadable artwork
-uses the renderer's existing procedural fallback. Supplying a visual configuration
-with `header_artwork_opacity=0` disables header artwork while retaining the logo.
+`assets/branding/leaderboard_header.png` is optional and disabled by default.
+The default `header_artwork_opacity=0` gives both boards a plain black header
+while retaining the logo and text. With a positive opacity, missing/unreadable
+artwork uses the renderer's procedural fallback.
 
 The webhook client sends `payload_json` and `files[0]` as multipart form data for
 both create (`POST`, `wait=true`) and edit (`PATCH`). An image edit supplies
@@ -485,23 +565,29 @@ Message IDs and published-week records are stored atomically in ignored local st
 
 Weekly publication is idempotent. Re-running an already published season/contest refreshes the two leaderboards but skips the recap and avoids another OpenAI request. Use `--repost` only when a duplicate recap is intentional. A week is marked published only after Discord confirms the recap post. Successful initial leaderboard creation is saved immediately, so a later recap failure will not duplicate leaderboard messages on the next run.
 
-Preview a week without contacting Discord or OpenAI:
+Preview a real H2H/tournament week without contacting Discord or OpenAI:
 
 ```powershell
-python -m kcdk weekly `
-  --csv data\mock\season_week_4.csv `
-  --members data\mock\members.csv `
-  --database data\processed\kcdk.sqlite `
-  --season mock-2026 `
-  --season-name "Mock 2026" `
-  --week "Week 4" `
+python -m kcdk weekly-runner `
+  --csv path\h2h.csv `
+  --tournament-csv path\tournament.csv `
+  --tournament-payout path\payout.csv `
+  --config path\local_config.json `
   --week-number 4 `
-  --year 2026 `
-  --tone normal `
   --dry-run
 ```
 
-The dry run performs the local idempotent CSV import, renders all three Discord payloads, reports whether the week is already published, and lists the create/edit/skip operations that would occur. It also renders fresh PNGs in image mode and reports each path, dimensions, byte size, selected image/text mode, fallback reason, and existing message ID to edit. Text fallback payloads are included only in local diagnostics. It never contacts Discord or changes Discord state, and uses a deterministic fact preview rather than incurring an OpenAI charge. Add `--generate-commentary` only when a paid commentary request during dry run is deliberate. Remove `--dry-run` for live publishing. Use `--repost` to intentionally publish an already-recorded week again.
+The local config supplies the real member list, season and actual H2H rake in cents.
+The runner copies the database to a temporary location, imports both sources,
+renders recap/leaderboard previews, and leaves production DB/publication state
+untouched. PNGs from this runner dry run are temporary. Use the standalone
+`smoke_tournament.py --output-dir ...` command to retain the real tournament PNG.
+
+The scriptable `weekly` command supports the same tournament flags plus the
+required `--h2h-dk-fee-cents` value. Its `--dry-run` still imports into its selected
+`--database`; choose an isolated database for testing. `--generate-commentary`
+explicitly permits a paid request in that scriptable command and is not needed
+for offline previews.
 
 Discord content, embed, field, and combined embed limits are centralized and validated before transport. All outbound payloads disable mentions. Transport uses a finite timeout and no automatic retries because retrying a successful-but-ambiguous webhook request can create duplicates. Errors include only safe operation/status information and never webhook URLs.
 
@@ -534,7 +620,31 @@ Live smoke tests are never run by pytest; test coverage uses mocked transport.
 
 Before production use, validate the first real export's delimiter, encoding, header spelling, actual prize/winnings column and formatting, duplicate-column behavior, contest ID/date availability, multi-entry member behavior, tie representation, lineup string grammar, and the exact relationship between entrant rows and side-by-side player ownership/FPTS rows. The persistence schema should not need to change if only header aliases or lineup parsing need another format adapter.
 
-## Planned phases
+## Discord orchestration: independent contest channels
+
+The new `discord-bot` listener handles authorized contest announcements and
+occasional conversation in general chat. The new `results` command accepts
+`--h2h-csv`, `--tournament-csv`, or both; each type gets separate fact-grounded
+commentary and new historical posts, plus an update to its persistent leaderboard.
+Existing webhook commands retain their behavior.
+
+See [Discord orchestration setup and operator guide](docs/discord-orchestration.md)
+for channel IDs, bot permissions, conversation controls, dry runs and recovery.
+Start with the offline checks:
+
+```powershell
+python -m pytest -q -p no:cacheprovider
+python scripts/smoke_discord_orchestration.py
+python -m kcdk discord-bot --config data/discord_config.example.json --check-config
+```
+
+Copy `data/discord_config.example.json` to ignored `data/discord_config.json` and
+replace its sample IDs before use. `results` defaults to an isolated dry run;
+`--live` requires a preflight and typed confirmation. The listener connects only
+when explicitly started without `--check-config`. Install its optional gateway
+dependency with `python -m pip install -e ".[discord]"`.
+
+## Remaining validation
 
 1. Validate and adapt parsing and fact thresholds against the first real DraftKings export.
 2. Validate OpenAI commentary tone and prompt behavior with league feedback.

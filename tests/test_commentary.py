@@ -180,7 +180,7 @@ def test_prompt_has_fact_causality_partial_and_safety_restrictions():
 def test_commissioner_prompt_explicitly_frames_weekly_dfs(tone):
     instructions = " ".join(build_commentary_request(_report(), tone=tone).instructions.split())
     assert "KCDK is daily fantasy sports" in instructions
-    assert "Each week is a separate DraftKings DFS contest with a newly constructed lineup" in instructions
+    assert "Each weekly H2H is a separate DraftKings DFS contest with a newly constructed lineup" in instructions
     assert "in separate weekly DFS lineups N times" in instructions
     assert "Consecutive usage means a new selection" in instructions
     assert "Season standings aggregate those separate contests" in instructions

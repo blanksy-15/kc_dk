@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from kcdk.dk_import import (
+    contest_result_rows,
     import_contest,
     match_kcdk_members,
     normalize_contest,
@@ -15,6 +16,23 @@ from kcdk.dk_import import (
 from kcdk.members import load_members
 
 ROOT = Path(__file__).parents[1]
+
+
+def test_player_metadata_rows_are_not_entrants():
+    contest = normalize_contest(pd.DataFrame({
+        "Rank": [1, None, 2],
+        "EntryId": [101, None, None],
+        "EntryName": ["member", None, "incomplete"],
+        "Points": [100, None, 90],
+        "Player": ["Player One", "Player Two", "Player Three"],
+        "FPTS": [20, 30, 40],
+    }))
+    results = contest_result_rows(contest)
+    assert results.entry_name.tolist() == ["member", "incomplete"]
+    assert pd.isna(results.iloc[1].entry_id)
+    assert len(contest) == 3
+    assert contest.loc[1, "player"] == "Player Two"
+    assert contest.loc[1, "fpts"] == 30
 
 
 def test_header_normalization_and_mock_import():

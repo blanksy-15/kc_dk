@@ -21,6 +21,7 @@ env/
 
 # Local data and generated output
 data/members.csv
+data/discord_config.json
 data/raw/*
 !data/raw/.gitkeep
 data/processed/*

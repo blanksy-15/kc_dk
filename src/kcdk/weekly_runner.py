@@ -22,6 +22,7 @@ from .dk_import import (
     weekly_standings,
 )
 from .members import load_members
+from .leaderboard_delivery import LeaderboardConfig
 from .persistence import connect_database, initialize_database, import_week
 from .facts import build_weekly_fact_report
 from .drunk_bot import DrunkBotConfig, DrunkBotEligibility, select_drunk_bot_facts
@@ -55,8 +56,11 @@ class LocalWeeklyConfig:
     database_path: str = str(DEFAULT_DATABASE_PATH)
     state_path: str = str(DEFAULT_DISCORD_STATE_PATH)
     drunk_bot_enabled: bool = True
+    h2h_dk_fee_cents: int | None = None
 
     def __post_init__(self) -> None:
+        if self.h2h_dk_fee_cents is not None and (type(self.h2h_dk_fee_cents) is not int or self.h2h_dk_fee_cents < 0):
+            raise WeeklyRunnerError("h2h_dk_fee_cents must be a nonnegative integer")
         if type(self.drunk_bot_enabled) is not bool:
             raise WeeklyRunnerError("drunk_bot_enabled must be true or false.")
         text_fields = {
@@ -102,6 +106,7 @@ class LocalWeeklyConfig:
             "database_path",
             "state_path",
             "drunk_bot_enabled",
+            "h2h_dk_fee_cents",
         }
         unknown = sorted(set(payload) - allowed)
         if unknown:
@@ -193,6 +198,8 @@ class WeeklyPreflight:
     blocking_errors: tuple[str, ...]
     warnings: tuple[str, ...]
     drunk_bot: DrunkBotEligibility | None = None
+    tournament_details: tuple[str, ...] = ()
+    h2h_economics: str = ""
 
     @property
     def can_continue(self) -> bool:
@@ -203,9 +210,9 @@ class WeeklyPreflight:
             "",
             "KCDK weekly preflight",
             "---------------------",
-            f"CSV: {self.csv_path.name} ({self.csv_path})",
+            f"KCDK_H2H CSV: {self.csv_path.name} ({self.csv_path})",
             f"Season/week: {self.season_name} [{self.season_identifier}] / {self.week_label}",
-            f"Tournament entries parsed: {self.total_entries}",
+            f"H2H entries parsed: {self.total_entries}",
             f"KCDK members matched: {self.matched_members}/{self.active_members}",
             "Unmatched configured members: "
             + (", ".join(self.unmatched_members) if self.unmatched_members else "none"),
@@ -226,6 +233,8 @@ class WeeklyPreflight:
         ]
         if self.configured_model:
             lines.append(f"OpenAI model: {self.configured_model}")
+        lines.append(self.h2h_economics)
+        lines.extend(self.tournament_details)
         if self.drunk_bot:
             lines.append(
                 f"Drunk Bot: enabled={'yes' if self.drunk_bot.enabled else 'no'}, "
@@ -384,12 +393,17 @@ def build_preflight(
     config: LocalWeeklyConfig,
     week_number: int,
     dry_run: bool,
+    tournament_csv_path: str | Path | None = None,
+    tournament_payout_path: str | Path | None = None,
+    allow_unknown_tournament_payouts: bool = False,
 ) -> WeeklyPreflight:
     """Parse and inspect a week without creating DB rows or contacting services."""
     source = Path(csv_path)
     members_path = Path(config.members_path)
     errors: list[str] = []
     warnings: list[str] = []
+    tournament_details = []
+    h2h_economics = ""
     empty = dict(
         total_entries=0,
         matched_members=0,
@@ -411,7 +425,11 @@ def build_preflight(
     metrics: dict[str, object] = empty
     if not errors:
         try:
-            contest = import_contest(source)
+            from .persistence import prepare_h2h
+            contest, _, h2h_results = prepare_h2h(source,members_path,config.h2h_dk_fee_cents)
+            gross_pool = len(h2h_results)*500
+            h2h_economics = f"H2H: {len(h2h_results)} × $5.00; pool ${gross_pool/100:.2f}; DK fee ${config.h2h_dk_fee_cents/100:.2f}; winner gross ${(gross_pool-config.h2h_dk_fee_cents)/100:.2f}, net ${(gross_pool-config.h2h_dk_fee_cents-500)/100:.2f}; other entries net -$5.00."
+            contest["prize_cents"] = pd.array([gross_pool-config.h2h_dk_fee_cents if points == h2h_results.points.max() else 0 for points in contest.points],dtype="Int64")
             results = contest_result_rows(contest)
             members = load_members(members_path, active_only=False)
             active = members.loc[members["active"]].copy()
@@ -481,6 +499,34 @@ def build_preflight(
             errors.append(f"CSV/member validation failed: {exc}")
 
     label = f"Week {week_number}"
+    if tournament_payout_path and not tournament_csv_path:
+        errors.append("Tournament payout source requires tournament results")
+    if tournament_csv_path:
+        try:
+            from .tournaments import prepare_tournament
+            if not tournament_payout_path and not allow_unknown_tournament_payouts:
+                raise ValueError("Select a tournament payout CSV or explicitly allow unknown payouts")
+            _, _, tournament_matches, tiers, size = prepare_tournament(tournament_csv_path,members_path,tournament_payout_path)
+            tournament_details.extend([f"TOURNAMENT CSV: {tournament_csv_path}",f"Tournament payout CSV: {tournament_payout_path or 'none (explicitly unknown)'}",
+                f"Tournament: {size:,} entries; {tournament_matches.base_username.nunique()} KCDK members; {len(tournament_matches)} KCDK entries; {len(tiers or ())} payout tiers."])
+            for name, group in tournament_matches.groupby("display_name"):
+                known = group.gross_winnings_cents.notna().all()
+                money = f"gross ${group.gross_winnings_cents.sum()/100:.2f}; net ${group.net_profit_cents.sum()/100:.2f}" if known else "gross/net unknown"
+                tournament_details.append(f"  {name}: {len(group)} entries; fees ${len(group)*3:.2f}; {money}; average points {group.points.mean():.2f}; average percentile {group.percentile.mean():.2f}; {int(group.gross_winnings_cents.gt(0).sum()) if known else 'unknown'} cashes.")
+            read = _database_read_only(Path(config.database_path))
+            if read:
+                try:
+                    if read.execute("SELECT 1 FROM sqlite_master WHERE name='tournaments'").fetchone():
+                        other = read.execute("SELECT 1 FROM tournaments t JOIN seasons s ON s.id=t.season_id WHERE s.identifier=? AND t.source_fingerprint=? AND t.week_label<>?", (config.season_identifier,_fingerprint(Path(tournament_csv_path)),label)).fetchone()
+                        if other:
+                            errors.append("Tournament source already belongs to another week")
+                        old = read.execute("SELECT t.* FROM tournaments t JOIN seasons s ON s.id=t.season_id WHERE s.identifier=? AND t.week_label=?", (config.season_identifier,label)).fetchone()
+                        if old and (old['source_fingerprint'] != _fingerprint(Path(tournament_csv_path)) or old['payout_fingerprint'] != (_fingerprint(Path(tournament_payout_path)) if tournament_payout_path else None)):
+                            errors.append("Tournament results/payout changed; runner never replaces implicitly")
+                finally:
+                    read.close()
+        except (ValueError,OSError,UnicodeError,pd.errors.ParserError) as exc:
+            errors.append(f"Tournament validation failed: {exc}")
     contest_id: int | None = None
     stored_fingerprint: str | None = None
     try:
@@ -490,6 +536,21 @@ def build_preflight(
     except WeeklyRunnerError as exc:
         errors.append(str(exc))
     exact = False
+    read = _database_read_only(Path(config.database_path))
+    if read:
+        try:
+            if read.execute("SELECT 1 FROM sqlite_master WHERE name='contests'").fetchone():
+                if source.is_file():
+                    other = read.execute("SELECT 1 FROM contests c JOIN seasons s ON s.id=c.season_id WHERE s.identifier=? AND c.source_fingerprint=? AND c.week_label<>?", (config.season_identifier,_fingerprint(source),label)).fetchone()
+                    if other:
+                        errors.append("H2H source already belongs to another week")
+                if contest_id is not None:
+                    columns = {row[1] for row in read.execute("PRAGMA table_info(contests)")}
+                    existing = read.execute("SELECT * FROM contests WHERE id=?",(contest_id,)).fetchone()
+                    if 'contest_type' not in columns or existing['contest_type'] != 'KCDK_H2H' or existing['dk_fee_cents'] != config.h2h_dk_fee_cents:
+                        errors.append("Existing week has different H2H economics/type; explicit migration/replacement required")
+        finally:
+            read.close()
     if contest_id is not None and source.is_file():
         exact = stored_fingerprint == _fingerprint(source)
         if not exact:
@@ -519,7 +580,8 @@ def build_preflight(
     drunk_eligibility = None
     if not errors:
         try:
-            drunk_eligibility = _preview_drunk_bot(source, config, week_number)
+            drunk_eligibility = _preview_drunk_bot(source, config, week_number,
+                tournament_csv_path=tournament_csv_path,tournament_payout_path=tournament_payout_path)
         except (ValueError, OSError, sqlite3.Error, PublishingError) as exc:
             errors.append(f"Drunk Bot preflight failed ({type(exc).__name__}).")
 
@@ -538,6 +600,8 @@ def build_preflight(
         blocking_errors=tuple(errors),
         warnings=tuple(warnings),
         drunk_bot=drunk_eligibility,
+        tournament_details=tuple(tournament_details),
+        h2h_economics=h2h_economics,
         **metrics,
     )
 
@@ -556,8 +620,10 @@ def _prompt_config(
     year_text = input_func("Season year [blank for unknown]: ").strip()
     members = input_func("Members CSV [data/members.csv]: ").strip() or "data/members.csv"
     tone = input_func("Default tone [normal]: ").strip().casefold() or "normal"
+    fee_text = input_func("H2H total DraftKings fee in cents (required; no assumed rake): ").strip()
     try:
         year = int(year_text) if year_text else None
+        fee = int(fee_text)
     except ValueError as exc:
         raise WeeklyRunnerError("Season year must be a whole number.") from exc
     config = LocalWeeklyConfig(
@@ -566,6 +632,7 @@ def _prompt_config(
         season_year=year,
         members_path=members,
         default_tone=tone,
+        h2h_dk_fee_cents=fee,
     )
     store.save(config)
     output_func(f"Saved local defaults to {store.path} (no secrets).")
@@ -592,7 +659,7 @@ def _persona_config(config: LocalWeeklyConfig) -> DrunkBotConfig:
     return replace(settings, enabled=settings.enabled and config.drunk_bot_enabled)
 
 
-def _preview_drunk_bot(source: Path, config: LocalWeeklyConfig, week_number: int) -> DrunkBotEligibility:
+def _preview_drunk_bot(source: Path, config: LocalWeeklyConfig, week_number: int, *, tournament_csv_path=None, tournament_payout_path=None) -> DrunkBotEligibility:
     """Import only into a disposable copy; never open production for writing."""
     settings = _persona_config(config)
     if not settings.enabled:
@@ -609,7 +676,13 @@ def _preview_drunk_bot(source: Path, config: LocalWeeklyConfig, week_number: int
                 connection, source, config.members_path, season_name=config.season_name,
                 season_identifier=config.season_identifier, season_year=config.season_year,
                 week_number=week_number, week_label=f"Week {week_number}",
+                contest_type="KCDK_H2H",dk_fee_cents=config.h2h_dk_fee_cents,
             )
+            if tournament_csv_path:
+                from .tournaments import import_tournament
+                import_tournament(connection,tournament_csv_path,config.members_path,
+                    season_name=config.season_name,season_identifier=config.season_identifier,
+                    season_year=config.season_year,week_number=week_number,payout_path=tournament_payout_path)
             row = connection.execute(
                 """SELECT c.id FROM contests c JOIN seasons s ON s.id = c.season_id
                 WHERE s.identifier = ? AND c.week_label = ?""",
@@ -622,7 +695,8 @@ def _preview_drunk_bot(source: Path, config: LocalWeeklyConfig, week_number: int
 
 
 def run_dry_run(
-    *, csv_path: Path, config: LocalWeeklyConfig, week_number: int
+    *, csv_path: Path, config: LocalWeeklyConfig, week_number: int,
+    tournament_csv_path=None,tournament_payout_path=None,allow_unknown_tournament_payouts=False,
 ) -> WeeklyWorkflowResult:
     """Execute the real pipeline against a disposable DB with no network calls."""
     with tempfile.TemporaryDirectory(prefix="kcdk-weekly-") as temporary:
@@ -643,6 +717,10 @@ def run_dry_run(
                 dry_run=True,
                 state_store=DiscordStateStore(config.state_path),
                 drunk_bot_config=_persona_config(config),
+                strict_h2h=True,h2h_dk_fee_cents=config.h2h_dk_fee_cents,
+                tournament_csv_path=tournament_csv_path,tournament_payout_path=tournament_payout_path,
+                allow_unknown_tournament_payouts=allow_unknown_tournament_payouts,
+                leaderboard_config=replace(LeaderboardConfig.from_env(),output_directory=Path(temporary)/"leaderboards"),
             )
         finally:
             connection.close()
@@ -659,10 +737,16 @@ def _success_summary(result: WeeklyWorkflowResult) -> str:
             "KCDK weekly run completed successfully.",
             f"Imported: {result.import_summary.matched_kcdk_members} matched member(s), "
             f"{result.import_summary.lineup_player_rows_stored} lineup-player row(s)",
+            *((f"Tournament imported: {result.tournament_import_summary.entry_count} entries, "
+               f"{result.tournament_import_summary.matched_members} members, "
+               f"{result.tournament_import_summary.lineup_count} selections",)
+              if getattr(result,"tournament_import_summary",None) else ()),
             f"KCDK leaderboard: {operations.get('kcdk_leaderboard', 'unknown')}",
             "Tournament leaderboard: "
             f"{operations.get('tournament_leaderboard', 'unknown')}",
             f"Weekly recap: {operations.get('weekly_recap', 'unknown')}",
+            *(f"{target}: {operations[target]}" for target in ("h2h_results", "tournament_results")
+              if target in operations),
             f"Commentary source: {result.publication.commentary_source}",
             f"Drunk Bot: {result.publication.drunk_bot.status if result.publication.drunk_bot else 'not planned'}",
             *((f"Drunk Bot detail: {result.publication.drunk_bot.error}",)
@@ -684,6 +768,7 @@ def run_interactive_weekly(
     input_func: Callable[[str], str] = input,
     output_func: Callable[[str], None] = print,
     file_selector: Callable[[], Path | None] = select_csv_file,
+    tournament_csv_path=None,tournament_payout_path=None,allow_unknown_tournament_payouts=False,
 ) -> InteractiveRunResult:
     """Guide a human through guarded preflight, confirmation, and publication."""
     selected = Path(csv_path) if csv_path is not None else file_selector()
@@ -692,6 +777,14 @@ def run_interactive_weekly(
         return InteractiveRunResult("cancelled")
 
     config = _prompt_config(LocalConfigStore(config_path), input_func, output_func)
+    if csv_path is None and tournament_csv_path is None:
+        if confirmation_is_yes(input_func("Select an optional TOURNAMENT results CSV? [y/N] ")):
+            tournament_csv_path = file_selector()
+            if tournament_csv_path:
+                output_func("Select the tournament payout CSV; cancel to leave payouts unknown.")
+                tournament_payout_path = file_selector()
+                if not tournament_payout_path:
+                    allow_unknown_tournament_payouts = confirmation_is_yes(input_func("Continue with tournament gross/net unknown? [y/N] "))
     if week_number is None:
         suggestion = suggest_next_week(config.database_path, config.season_identifier)
         answer = input_func(f"Week number [{suggestion}]: ").strip()
@@ -705,6 +798,8 @@ def run_interactive_weekly(
         config=config,
         week_number=week_number,
         dry_run=dry_run,
+        tournament_csv_path=tournament_csv_path,tournament_payout_path=tournament_payout_path,
+        allow_unknown_tournament_payouts=allow_unknown_tournament_payouts,
     )
     output_func(preflight.render())
     if not preflight.can_continue:
@@ -712,7 +807,9 @@ def run_interactive_weekly(
         return InteractiveRunResult("blocked", preflight)
 
     if dry_run:
-        result = run_dry_run(csv_path=selected, config=config, week_number=week_number)
+        result = run_dry_run(csv_path=selected, config=config, week_number=week_number,
+            tournament_csv_path=tournament_csv_path,tournament_payout_path=tournament_payout_path,
+            allow_unknown_tournament_payouts=allow_unknown_tournament_payouts)
         output_func(json.dumps(result.to_dict(), indent=2, sort_keys=True, allow_nan=False))
         output_func(_success_summary(result))
         output_func("Dry run only: production data, OpenAI, and Discord were untouched.")
@@ -746,6 +843,9 @@ def run_interactive_weekly(
             repost=repost,
             state_store=DiscordStateStore(config.state_path),
             drunk_bot_config=_persona_config(config),
+            strict_h2h=True,h2h_dk_fee_cents=config.h2h_dk_fee_cents,
+            tournament_csv_path=tournament_csv_path,tournament_payout_path=tournament_payout_path,
+            allow_unknown_tournament_payouts=allow_unknown_tournament_payouts,
         )
     finally:
         connection.close()

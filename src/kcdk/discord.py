@@ -66,6 +66,8 @@ class DiscordConfig:
     leaderboard_webhook_url: str | None = field(default=None, repr=False)
     timeout_seconds: float = DEFAULT_DISCORD_TIMEOUT_SECONDS
     drunk_webhook_url: str | None = field(default=None, repr=False)
+    h2h_webhook_url: str | None = field(default=None, repr=False)
+    tournament_webhook_url: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
@@ -76,6 +78,8 @@ class DiscordConfig:
             ("DISCORD_WEEKLY_WEBHOOK_URL", self.weekly_webhook_url),
             ("DISCORD_LEADERBOARD_WEBHOOK_URL", self.leaderboard_webhook_url),
             ("DISCORD_DRUNK_WEBHOOK_URL", self.drunk_webhook_url),
+            ("DISCORD_H2H_WEBHOOK_URL", self.h2h_webhook_url),
+            ("DISCORD_TOURNAMENT_WEBHOOK_URL", self.tournament_webhook_url),
         ):
             if value:
                 _validate_webhook_url(value, name)
@@ -123,6 +127,10 @@ class DiscordConfig:
             timeout_seconds=timeout,
             drunk_webhook_url=(os.getenv("DISCORD_DRUNK_WEBHOOK_URL")
                                or file_values.get("DISCORD_DRUNK_WEBHOOK_URL") or "").strip() or None,
+            h2h_webhook_url=(os.getenv("DISCORD_H2H_WEBHOOK_URL")
+                            or file_values.get("DISCORD_H2H_WEBHOOK_URL") or "").strip() or None,
+            tournament_webhook_url=(os.getenv("DISCORD_TOURNAMENT_WEBHOOK_URL")
+                                   or file_values.get("DISCORD_TOURNAMENT_WEBHOOK_URL") or "").strip() or None,
         )
 
 
