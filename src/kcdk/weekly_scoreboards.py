@@ -15,8 +15,11 @@ def h2h_rows(frame, config):
             'rank': int(row.kcdk_finish), 'player': row.display_name,
             'movement': f'{row.draftkings_fantasy_points:.2f}',
             'movement_status': MOVEMENT_SAME,
-            'values': tuple(format_currency(value / 100) for value in
-                            (row.prize_cents, row.entry_fee_cents, row.net_profit_cents)),
+            'values': (
+                row.top_lineup_player,
+                row.bottom_lineup_player,
+                format_currency(row.prize_cents / 100),
+            ),
             'green_column': None,
         })
     return rows, False
@@ -31,17 +34,24 @@ def tournament_rows(frame, config):
     return rows, incomplete
 
 
-def prepare_weekly_scoreboards(h2h, tournament, *, season_name, week_label, config):
+def prepare_weekly_scoreboards(h2h, tournament, *, h2h_lineups, season_name, week_label, config):
     """Inputs must already be filtered to the requested week. Text mode is supported."""
     if (config.mode != 'image' or h2h.empty or 'contest_type' not in h2h
             or not h2h.contest_type.eq('KCDK_H2H').all()):
         return ()
     from dataclasses import replace
-    style = replace(config.visual, column_font_size=18, row_font_size=23)
+    style = replace(config.visual, column_font_size=17, row_font_size=20)
+    h2h = h2h.merge(
+        h2h_lineups[["display_name", "top_lineup_player", "bottom_lineup_player"]],
+        on="display_name", validate="one_to_one",
+    )
+    h2h[["top_lineup_player", "bottom_lineup_player"]] = h2h[
+        ["top_lineup_player", "bottom_lineup_player"]
+    ].fillna("—")
     specifications = [(
         h2h, 'weekly_h2h.png', 'KCDK WEEKLY H2H SCOREBOARD',
-        ('RK', 'POINTS', 'PLAYER', 'PAYOUT', 'ENTRY FEE', 'NET'),
-        (65, 140, 540, 200, 160, 207), h2h_rows,
+        ('RK', 'POINTS', 'MEMBER', 'TOP PLAYER', 'BOTTOM PLAYER', 'PAYOUT'),
+        (55, 105, 230, 330, 440, 152), h2h_rows,
     )]
     if not tournament.empty:
         specifications.append((
@@ -62,7 +72,8 @@ def prepare_weekly_scoreboards(h2h, tournament, *, season_name, week_label, conf
             if png.format != 'PNG' or png.size != (style.canvas_width, style.image_height(len(frame))):
                 raise ValueError('Invalid weekly scoreboard image')
             png.verify()
-        attachments.append(DiscordAttachment(filename, data, f'{title} — {week_label} only'))
+        description = f'{title} - {week_label} only'
+        attachments.append(DiscordAttachment(filename, data, description))
     if sum(len(item.data) for item in attachments) > config.max_file_bytes:
         raise ValueError('Combined weekly scoreboards exceed the configured attachment limit')
     return tuple(attachments)

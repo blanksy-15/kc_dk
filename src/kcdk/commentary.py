@@ -339,6 +339,13 @@ def build_commentary_request(
 ) -> CommentaryRequest:
     """Build the exact, compact, secret-free Responses API request."""
     instructions = commentary_instructions(tone)
+    if report.season_identifier == "kcdk-2026" and report.week_label == "Week 3":
+        instructions += (
+            "\nWEEK 3 STYLE REQUEST: In one named member's fact-supported roast, "
+            "use the word 'meat' in a playful, non-graphic double entendre about "
+            "that member's fantasy performance. Keep all factual claims tied "
+            "to the cited fact IDs; do not imply anything about their body.\n"
+        )
     if not model.strip():
         raise CommentaryConfigurationError("OPENAI_MODEL cannot be empty.")
     if not report.selected_facts:
@@ -578,6 +585,12 @@ def generate_weekly_commentary(
             for fact in report.selected_facts
         },
     )
+    if report.season_identifier == "kcdk-2026" and report.week_label == "Week 3":
+        if not any(re.search(r"\bmeat\b", roast.text, re.IGNORECASE)
+                   and roast.member != "League" for roast in commentary.roasts):
+            raise CommentaryResponseError(
+                "Week 3 Commissioner commentary omitted the requested meat line."
+            )
     return CommentaryGeneration(
         request=request,
         commentary=commentary,

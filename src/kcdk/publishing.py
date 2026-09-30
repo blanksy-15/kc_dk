@@ -38,7 +38,9 @@ from .drunk_bot_publishing import (
 from .leaderboard_delivery import (
     LeaderboardConfig, PreparedLeaderboard, deliver_leaderboard, prepare_leaderboard,
 )
-from .persistence import ImportSummary, import_week, weekly_results
+from .persistence import (
+    ImportSummary, import_week, weekly_h2h_lineup_extremes, weekly_results,
+)
 from .tournaments import TournamentImportSummary
 
 
@@ -269,8 +271,8 @@ def render_weekly_recap(
         },
     ]
     if "contest_type" in results and results.contest_type.eq("KCDK_H2H").all():
-        fields[1] = {"name":"H2H gross / fees / net","inline":False,
-                     "value":_truncate("\n".join(f"**{row.display_name}** — gross {_money(row.prize_cents/100)} · fee $5.00 · net {_money(row.net_profit_cents/100)}" for row in results.itertuples()),DISCORD_EMBED_FIELD_VALUE_LIMIT)}
+        fields[1] = {"name":"H2H payout","inline":False,
+                     "value":_truncate("\n".join(f"**{row.display_name}** — payout {_money(row.prize_cents/100)}" for row in results.itertuples()),DISCORD_EMBED_FIELD_VALUE_LIMIT)}
         if tournament_results is not None and not tournament_results.empty:
             fields.append({"name":"Tournament performance","inline":False,
                 "value":_truncate("\n".join(f"**{row.display_name}** — {row.entry_count} entries · gross {_money(row.total_money_won)} · fees {_money(row.total_entry_fees)} · net {_money(row.total_net_profit)} · best #{row.best_tournament_rank:,}" for row in tournament_results.itertuples()),DISCORD_EMBED_FIELD_VALUE_LIMIT)})
@@ -379,8 +381,12 @@ def render_kcdk_leaderboard(
     for row in leaderboard.itertuples(index=False):
         lines.append(
             f"`{int(row.season_rank):>2}.` **{row.display_name}** — "
-            f"avg {float(row.average_finish):.2f} · {int(row.wins)}W · "
-            f"{int(row.podium_finishes)}P · {int(row.weeks_played)} wk"
+            f"avg finish {float(row.average_finish):.2f} · "
+            f"high {float(row.highest_draftkings_fantasy_score):.2f} · "
+            f"avg pts {float(row.average_draftkings_fantasy_points):.2f} · "
+            f"top 3 {int(row.podium_finishes)} · {int(row.weeks_played)} wk · "
+            f"last {int(row.last_place_finishes)} · "
+            f"payout {_money(row.total_payout)}{'*' if not row.prize_data_complete else ''}"
         )
     message = DiscordMessage(
         embeds=(
@@ -391,7 +397,8 @@ def render_kcdk_leaderboard(
                 ),
                 "color": KCDK_COLOR,
                 "footer": {
-                    "text": f"{season_name} · through {through_week} · ranked by average finish"
+                    "text": f"{season_name} · through {through_week} · ranked by H2H payout"
+                    + (" · * partial known payout data" if not leaderboard.prize_data_complete.all() else "")
                 },
             },
         )
@@ -663,6 +670,9 @@ def publish_weekly_report(
     tournament_results = tournament_aggregates(connection,season_identifier,week_label=week_label)
     from .weekly_scoreboards import prepare_weekly_scoreboards
     scoreboards = prepare_weekly_scoreboards(week_results, tournament_results,
+        h2h_lineups=weekly_h2h_lineup_extremes(
+            connection, season_identifier, week_label
+        ),
         season_name=report.season_name, week_label=week_label, config=image_config)
     weekly_message = render_weekly_recap(report, resolved_commentary, week_results,
         tournament_results=tournament_results, scoreboards=scoreboards)

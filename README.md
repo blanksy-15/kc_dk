@@ -4,17 +4,18 @@ KCDK is a local Python project for importing weekly DraftKings contest exports, 
 
 ## Two distinct leaderboards
 
-### KCDK standings: internal weekly finish
+### KCDK standings: H2H payout
 
-The official internal KCDK season ranking is **average weekly KCDK finish**, ascending. A member who finishes 1st, 4th, 2nd, and 3rd has an `average_finish` of 2.5. Weekly KCDK finish is ranked by DraftKings fantasy points; tied scores share the same KCDK finish.
+The official internal KCDK season ranking uses **total H2H payout** first. Ties are broken by lower average weekly KCDK finish, more wins, more podium finishes, higher average DraftKings fantasy points, then display name alphabetically. A member who finishes 1st, 4th, 2nd, and 3rd has an `average_finish` of 2.5. Weekly KCDK finish is ranked by DraftKings fantasy points; tied scores share the same KCDK finish.
 
 The provisional deterministic tiebreakers are isolated in `kcdk.analytics.KCDK_LEADERBOARD_TIEBREAKERS`:
 
-1. Lower average finish
-2. More wins
-3. More podium finishes
-4. Higher average DraftKings fantasy points
-5. Display name alphabetically
+1. Higher total H2H payout
+2. Lower average finish
+3. More wins
+4. More podium finishes
+5. Higher average DraftKings fantasy points
+6. Display name alphabetically
 
 ### Tournament standings: DraftKings tournament performance
 
@@ -198,7 +199,7 @@ command remains available for advanced automation.
 The Pillow renderer produces two matching, fixed-width graphics without
 changing analytical rank order:
 
-- `KCDK SEASON STANDINGS`, ranked by the official average-finish rules.
+- `KCDK SEASON STANDINGS`, ranked by total H2H payout, then average finish and the listed tiebreakers.
 - `KCDK TOURNAMENT PERFORMANCE`, ranked by net profit, average DraftKings points,
   average tournament percentile, and display name.
 
@@ -504,7 +505,7 @@ The normal publishing flow keeps importing, analytics, fact generation, OpenAI c
 
 The leaderboard webhook owns exactly two persistent messages:
 
-1. `KCDK Season Standings`, ranked by average weekly KCDK finish.
+1. `KCDK Season Standings`, ranked by total H2H payout, then average weekly KCDK finish.
 2. `KCDK Tournament Performance`, ranked by net profit and then average DraftKings points.
 
 Image mode is the default. Every publishing run calculates current standings and

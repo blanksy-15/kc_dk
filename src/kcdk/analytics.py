@@ -9,6 +9,7 @@ import pandas as pd
 
 # Kept as data so future official tiebreak changes stay localized.
 KCDK_LEADERBOARD_TIEBREAKERS = (
+    ("total_payout", False),
     ("average_finish", True),
     ("wins", False),
     ("podium_finishes", False),
@@ -34,8 +35,11 @@ MOVEMENT_NEW = "new"
 
 def sort_leaderboard(leaderboard: pd.DataFrame) -> pd.DataFrame:
     """Apply the configurable official ordering and assign deterministic ranks."""
-    sort_columns = [item[0] for item in KCDK_LEADERBOARD_TIEBREAKERS]
-    ascending = [item[1] for item in KCDK_LEADERBOARD_TIEBREAKERS]
+    tiebreakers = KCDK_LEADERBOARD_TIEBREAKERS
+    if "total_payout" not in leaderboard:
+        tiebreakers = tiebreakers[1:]
+    sort_columns = [item[0] for item in tiebreakers]
+    ascending = [item[1] for item in tiebreakers]
     ranked = leaderboard.sort_values(
         sort_columns, ascending=ascending, kind="stable"
     ).reset_index(drop=True)
@@ -353,7 +357,7 @@ def season_leaderboard(
     season_identifier: str,
     through_contest_id: int | None = None,
 ) -> pd.DataFrame:
-    """Build the official average-weekly-finish season leaderboard."""
+    """Build the official payout-first H2H season leaderboard."""
     results = _with_last_place(
         _season_results(connection, season_identifier, through_contest_id)
     )
@@ -367,6 +371,8 @@ def season_leaderboard(
         "last_place_finishes",
         "average_draftkings_fantasy_points",
         "highest_draftkings_fantasy_score",
+        "total_payout",
+        "prize_data_complete",
         "lowest_draftkings_fantasy_score",
         "average_tournament_percentile",
         "best_tournament_rank",
@@ -384,6 +390,8 @@ def season_leaderboard(
         last_place_finishes=("is_last_place", "sum"),
         average_draftkings_fantasy_points=("draftkings_fantasy_points", "mean"),
         highest_draftkings_fantasy_score=("draftkings_fantasy_points", "max"),
+        total_payout=("prize_cents", lambda values: values.sum(min_count=1) / 100.0),
+        weeks_with_prize_data=("prize_cents", "count"),
         lowest_draftkings_fantasy_score=("draftkings_fantasy_points", "min"),
         average_tournament_percentile=("tournament_percentile", "mean"),
         best_tournament_rank=("draftkings_overall_rank", "min"),
@@ -391,6 +399,9 @@ def season_leaderboard(
     ).reset_index()
     leaderboard = sort_leaderboard(leaderboard)
     leaderboard["last_place_finishes"] = leaderboard["last_place_finishes"].astype(int)
+    leaderboard["prize_data_complete"] = leaderboard["weeks_with_prize_data"].eq(
+        leaderboard["weeks_played"]
+    )
     return leaderboard[columns]
 
 

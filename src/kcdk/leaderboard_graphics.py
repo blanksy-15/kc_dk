@@ -18,10 +18,12 @@ KCDK_COLUMN_HEADERS = (
     "MOVE",
     "PLAYER",
     "AVG FIN",
-    "W",
-    "TOP 3",
+    "HIGH SCORE",
     "AVG PTS",
+    "TOP 3",
+    "WKS",
     "LAST",
+    "PAYOUT",
 )
 TOURNAMENT_COLUMN_HEADERS = (
     "RK",
@@ -89,7 +91,7 @@ class LeaderboardVisualConfig:
     callout_accent_height: int = 3
     regular_font_path: str | None = None
     bold_font_path: str | None = None
-    kcdk_column_widths: tuple[int, ...] = (65, 110, 540, 125, 65, 90, 170, 147)
+    kcdk_column_widths: tuple[int, ...] = (55, 75, 500, 105, 110, 115, 85, 75, 75, 117)
     tournament_column_widths: tuple[int, ...] = (
         65,
         110,
@@ -548,6 +550,13 @@ def _draw_header(
         font=fonts.subtitle,
         fill=config.orange,
     )
+    if title == "KCDK SEASON STANDINGS":
+        draw.text(
+            (text_left + 2, config.outer_margin + 130),
+            "RANKED BY TOTAL H2H PAYOUT",
+            font=fonts.column,
+            fill=config.muted_text_color,
+        )
     draw.rectangle(
         (
             config.outer_margin,
@@ -703,11 +712,18 @@ def _draw_rows(
         )
         for column_index, value in enumerate(row["values"], start=3):
             fill = config.green if row.get("green_column") == column_index else config.text_color
+            available = (
+                positions[column_index][1] - positions[column_index][0]
+                - 2 * config.cell_padding
+            )
+            value = truncate_text_to_width(
+                draw, str(value), fonts.regular, available
+            )
             _draw_right(
                 draw,
                 positions[column_index],
                 text_y,
-                str(value),
+                value,
                 fonts.regular,
                 fill,
                 config.cell_padding,
@@ -739,6 +755,8 @@ def _draw_footer(
     )
     if weekly_only:
         summary = f"{week_label.upper()}   ·   {member_count} KCDK MEMBERS   ·   THIS WEEK ONLY"
+    if incomplete:
+        summary += "   ·   * PARTIAL KNOWN PAYOUT DATA"
     draw.text(
         (config.outer_margin + config.cell_padding, top + 16),
         summary,
@@ -825,7 +843,10 @@ def build_kcdk_visual_rows(
     data: pd.DataFrame, config: LeaderboardVisualConfig
 ) -> tuple[list[dict[str, object]], bool]:
     rows: list[dict[str, object]] = []
+    incomplete = False
     for record in data.to_dict("records"):
+        complete = _prize_complete(record.get("prize_data_complete", True))
+        incomplete = incomplete or not complete
         rows.append(
             {
                 "rank": _as_int(record.get("season_rank")),
@@ -836,15 +857,18 @@ def build_kcdk_visual_rows(
                 "player": record.get("display_name", ""),
                 "values": (
                     f"{_as_float(record.get('average_finish')):.2f}",
-                    str(_as_int(record.get("wins"))),
-                    str(_as_int(record.get("podium_finishes"))),
+                    f"{_as_float(record.get('highest_draftkings_fantasy_score')):.2f}",
                     f"{_as_float(record.get('average_draftkings_fantasy_points')):.2f}",
+                    str(_as_int(record.get("podium_finishes"))),
+                    str(_as_int(record.get("weeks_played"))),
                     str(_as_int(record.get("last_place_finishes"))),
+                    format_currency(record.get("total_payout"),
+                                    complete=complete),
                 ),
                 "green_column": None,
             }
         )
-    return rows, False
+    return rows, incomplete
 
 
 def build_tournament_visual_rows(

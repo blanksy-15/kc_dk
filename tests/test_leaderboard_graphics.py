@@ -266,16 +266,19 @@ def test_currency_preserves_zero_unknown_and_incomplete():
 
 def test_refined_headers_and_internal_kcdk_visual_model():
     assert KCDK_COLUMN_HEADERS == (
-        "RK", "MOVE", "PLAYER", "AVG FIN", "W", "TOP 3", "AVG PTS", "LAST"
+        "RK", "MOVE", "PLAYER", "AVG FIN", "HIGH SCORE", "AVG PTS",
+        "TOP 3", "WKS", "LAST", "PAYOUT"
     )
-    assert "WON" not in KCDK_COLUMN_HEADERS
+    assert "NET" not in KCDK_COLUMN_HEADERS
     assert TOURNAMENT_COLUMN_HEADERS[-2] == "AVG PCTL"
     kcdk, _, _, _ = build_preview_frames()
     style = LeaderboardVisualConfig()
     rows, incomplete = build_kcdk_visual_rows(kcdk, style)
-    assert rows[0]["values"][-1] == str(int(kcdk.iloc[0]["last_place_finishes"]))
-    assert incomplete is False
-    assert style.kcdk_column_widths[2] == 540
+    assert rows[0]["values"][1] == f"{kcdk.iloc[0]['highest_draftkings_fantasy_score']:.2f}"
+    assert rows[0]["values"][-2] == str(int(kcdk.iloc[0]["last_place_finishes"]))
+    assert rows[0]["values"][-1] == format_currency(kcdk.iloc[0]["total_payout"])
+    assert incomplete is True
+    assert style.kcdk_column_widths[2] == 500
     assert style.tournament_column_widths[2] == 430
     assert sum(style.kcdk_column_widths) == 1312
     assert sum(style.tournament_column_widths) == 1312
@@ -341,7 +344,7 @@ def test_renderers_work_without_authored_assets_and_produce_valid_png(tmp_path):
     assert not second.procedural_skyline_used
     assert first.header_artwork is None
     assert second.header_artwork is None
-    assert not first.incomplete_prize_data
+    assert first.incomplete_prize_data
     assert second.incomplete_prize_data
     assert first.callout_count == 3
     assert second.callout_count == 3

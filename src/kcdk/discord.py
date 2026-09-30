@@ -252,6 +252,11 @@ class DiscordTransport(Protocol):
         self, webhook_url: str, message_id: str, message: DiscordMessage
     ) -> None: ...
 
+    def edit_attachments(
+        self, webhook_url: str, message_id: str,
+        files: tuple[DiscordAttachment, ...],
+    ) -> None: ...
+
     def delete_message(self, webhook_url: str, message_id: str) -> None: ...
 
 
@@ -349,6 +354,22 @@ class DiscordWebhookClient:
             payload=payload,
             files=message.files,
             stale_on_404=True,
+        )
+        self._record_attachments(message_id, response)
+
+    def edit_attachments(
+        self, webhook_url: str, message_id: str,
+        files: tuple[DiscordAttachment, ...],
+    ) -> None:
+        """Replace uploaded files while keeping the message text and embeds."""
+        _validate_webhook_url(webhook_url, "Discord webhook URL")
+        message = DiscordMessage(files=files, replace_attachments=True)
+        payload = message.to_payload()
+        payload.pop("content", None)
+        payload.pop("embeds", None)
+        response = self._request(
+            "PATCH", _message_url(webhook_url, message_id),
+            payload=payload, files=files, stale_on_404=True,
         )
         self._record_attachments(message_id, response)
 

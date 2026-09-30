@@ -32,6 +32,8 @@ def test_historical_recap_uses_only_requested_week_and_replaces_text(sources, tm
         assert len(captured) == 2
         h2h, tournament = [item[0] for item in captured]
         assert h2h.draftkings_fantasy_points.tolist() == [90, 80]
+        assert h2h.top_lineup_player.str.contains(r"\d", regex=True).all()
+        assert h2h.bottom_lineup_player.str.contains(r"\d", regex=True).all()
         assert tournament.entry_count.tolist() == [2]
         assert tournament.average_draftkings_fantasy_points.tolist() == [75]
         assert all(week == 'Week 1' for _, week in captured)

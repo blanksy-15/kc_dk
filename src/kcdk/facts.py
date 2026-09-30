@@ -818,13 +818,19 @@ def _season_and_money_facts(
     member_lookup = {row["display_name"]: row for row in results}
     kcdk_leader = kcdk.iloc[0].to_dict()
     kcdk_member = member_lookup[kcdk_leader["display_name"]]
+    leader_payout = kcdk_leader["total_payout"]
+    payout_text = (
+        f"${leader_payout:.2f}"
+        if leader_payout is not None and math.isfinite(float(leader_payout))
+        else "unknown payout"
+    )
     facts.append(
         _make_fact(
             fact_type="kcdk_standings_leader",
             category="season_standings",
             summary=(
                 f"{kcdk_leader['display_name']} leads the KCDK standings with "
-                f"an average finish of {kcdk_leader['average_finish']:.2f}."
+                f"{payout_text} in H2H payouts."
             ),
             season_identifier=identifier,
             contest=target,
@@ -903,7 +909,7 @@ def _season_and_money_facts(
                 category="season_contrast",
                 summary=(
                     f"{row['display_name']} has the most KCDK weekly wins ({int(most_wins)}), "
-                    f"while {kcdk_leader['display_name']} leads by average finish."
+                    f"while {kcdk_leader['display_name']} leads by H2H payout."
                 ),
                 season_identifier=identifier,
                 contest=target,
@@ -959,7 +965,7 @@ def _season_and_money_facts(
                     fact_type="standings_rank_contrast",
                     category="season_contrast",
                     summary=(
-                        f"{name} ranks {int(row['season_rank'])} in KCDK average finish "
+                        f"{name} ranks {int(row['season_rank'])} in KCDK season standings "
                         f"and {percentile_ranks[name]} in average tournament percentile."
                     ),
                     season_identifier=identifier,

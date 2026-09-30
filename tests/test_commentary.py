@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -237,6 +238,29 @@ def test_responses_api_structured_request_parses_and_tracks_usage():
     assert call["text"]["format"]["type"] == "json_schema"
     assert call["text"]["format"]["strict"] is True
     assert call["metadata"]["prompt_version"] == COMMENTARY_PROMPT_VERSION
+
+
+def test_week_three_glazenuts_meat_line_is_requested_and_required():
+    fact = replace(_fact(), season_identifier="kcdk-2026", week_label="Week 3")
+    report = replace(_report(selected=[fact]), season_identifier="kcdk-2026",
+                     week_label="Week 3")
+    request = build_commentary_request(report)
+    assert "WEEK 3 STYLE REQUEST" in request.instructions
+    assert "word 'meat'" in request.instructions
+
+    def output(kwargs):
+        return _valid_output(json.loads(kwargs["input"])["selected_facts"][0]["fact_id"])
+
+    with pytest.raises(CommentaryResponseError, match="omitted the requested meat line"):
+        generate_weekly_commentary(report, config=_config(), client=FakeClient(output))
+
+    def with_meat(kwargs):
+        result = output(kwargs)
+        result["roasts"][0]["text"] = "Casey brought the meat to this week's winning lineup."
+        return result
+
+    generated = generate_weekly_commentary(report, config=_config(), client=FakeClient(with_meat))
+    assert "meat" in generated.commentary.roasts[0].text
 
 
 def test_official_sdk_serializes_request_with_mock_transport():

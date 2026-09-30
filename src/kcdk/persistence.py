@@ -600,3 +600,51 @@ def weekly_results(
     results = pd.read_sql_query(query, connection, params=parameters)
     results["money_won"] = results["prize_cents"] / 100.0
     return results
+
+
+def weekly_h2h_lineup_extremes(
+    connection: sqlite3.Connection, season_identifier: str, week_label: str
+) -> pd.DataFrame:
+    """Return each H2H member's highest and lowest scoring selected NFL players."""
+    lineup = pd.read_sql_query(
+        """
+        SELECT m.display_name, p.display_name AS player_name,
+               lp.player_fantasy_points
+        FROM lineup_players lp
+        JOIN contests c ON c.id = lp.contest_id
+        JOIN seasons s ON s.id = c.season_id
+        JOIN members m ON m.id = lp.member_id
+        JOIN players p ON p.id = lp.player_id
+        WHERE s.identifier = ? AND c.week_label = ?
+          AND c.contest_type = 'KCDK_H2H' AND lp.roster_position <> 'DST'
+        ORDER BY m.display_name, p.display_name
+        """,
+        connection,
+        params=[season_identifier, week_label],
+    )
+    rows = []
+    for display_name, group in lineup.groupby("display_name", sort=False):
+        scored = group.dropna(subset=["player_fantasy_points"])
+        if scored.empty:
+            rows.append({
+                "display_name": display_name,
+                "top_lineup_player": "—",
+                "bottom_lineup_player": "—",
+            })
+            continue
+        highest = scored["player_fantasy_points"].max()
+        lowest = scored["player_fantasy_points"].min()
+        top_names = sorted(scored.loc[
+            scored["player_fantasy_points"].eq(highest), "player_name"
+        ].unique())
+        bottom_names = sorted(scored.loc[
+            scored["player_fantasy_points"].eq(lowest), "player_name"
+        ].unique())
+        rows.append({
+            "display_name": display_name,
+            "top_lineup_player": f"{' & '.join(top_names)} ({highest:.2f})",
+            "bottom_lineup_player": f"{' & '.join(bottom_names)} ({lowest:.2f})",
+        })
+    return pd.DataFrame(rows, columns=[
+        "display_name", "top_lineup_player", "bottom_lineup_player"
+    ])

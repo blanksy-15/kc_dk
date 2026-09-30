@@ -5,7 +5,7 @@ from __future__ import annotations
 from .dfs_context import DFS_COMMENTARY_CONTEXT
 
 
-COMMENTARY_PROMPT_VERSION = "7"
+COMMENTARY_PROMPT_VERSION = "8"
 
 TONE_PROFILES: dict[str, str] = {
     "mild": (

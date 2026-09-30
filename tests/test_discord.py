@@ -544,7 +544,10 @@ def test_independent_leaderboard_renderers_are_compact(season_db):
         through_week="Week 4",
     ).to_payload()
 
-    assert "avg 2.25" in kcdk["embeds"][0]["description"]
+    assert "avg finish 2.25" in kcdk["embeds"][0]["description"]
+    assert "high 190.00" in kcdk["embeds"][0]["description"]
+    assert "payout $125.50" in kcdk["embeds"][0]["description"]
+    assert "net " not in kcdk["embeds"][0]["description"]
     assert "$160.00" in tournament["embeds"][0]["description"]
     assert "partial known prize data" in tournament["embeds"][0]["footer"][
         "text"

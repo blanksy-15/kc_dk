@@ -183,6 +183,8 @@ def test_multiple_week_leaderboard_aggregates_required_statistics(season_db):
     assert casey["last_place_finishes"] == 0
     assert casey["average_draftkings_fantasy_points"] == pytest.approx(186.75)
     assert casey["highest_draftkings_fantasy_score"] == pytest.approx(190)
+    assert casey["total_payout"] == pytest.approx(125.50)
+    assert bool(casey["prize_data_complete"])
     assert casey["lowest_draftkings_fantasy_score"] == pytest.approx(178)
     assert casey["average_tournament_percentile"] == pytest.approx(86.111111)
     assert casey["best_tournament_rank"] == 1
