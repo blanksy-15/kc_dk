@@ -145,41 +145,6 @@ def _current_and_previous_contest_ids(
     return current_id, previous_id
 
 
-def _contest_member_names(
-    connection: sqlite3.Connection, contest_id: int
-) -> set[str]:
-    rows = connection.execute(
-        """
-        SELECT m.display_name
-        FROM member_results r JOIN members m ON m.id = r.member_id
-        WHERE r.contest_id = ?
-        """,
-        (contest_id,),
-    ).fetchall()
-    return {str(row[0]) for row in rows}
-
-
-def _mark_current_returnees_new(
-    connection: sqlite3.Connection,
-    movement: pd.DataFrame,
-    current_id: int,
-    previous_id: int | None,
-) -> pd.DataFrame:
-    if previous_id is None:
-        return movement
-    current_members = _contest_member_names(connection, current_id)
-    previous_members = _contest_member_names(connection, previous_id)
-    returning = current_members - previous_members
-    if not returning:
-        return movement
-    result = movement.copy()
-    mask = result["display_name"].isin(returning)
-    result.loc[mask, "previous_rank"] = pd.NA
-    result.loc[mask, "movement_delta"] = pd.NA
-    result.loc[mask, "movement_status"] = MOVEMENT_NEW
-    return result
-
-
 def season_leaderboard_with_movement(
     connection: sqlite3.Connection,
     season_identifier: str,
@@ -198,9 +163,7 @@ def season_leaderboard_with_movement(
     movement = add_rank_movement(
         current, previous, rank_column="season_rank"
     )
-    return _mark_current_returnees_new(
-        connection, movement, current_id, previous_id
-    )
+    return movement
 
 
 def tournament_leaderboard_with_movement(
@@ -220,17 +183,7 @@ def tournament_leaderboard_with_movement(
         weeks = [row[0] for row in connection.execute("SELECT t.week_number FROM tournaments t JOIN seasons s ON s.id=t.season_id WHERE s.identifier=? AND (? IS NULL OR t.week_number<=?) ORDER BY t.week_number", (season_identifier,limit,limit))]
         current = tournament_aggregates(connection, season_identifier, through_week_number=limit)
         previous = tournament_aggregates(connection, season_identifier, through_week_number=weeks[-2]) if len(weeks)>1 else None
-        movement = add_rank_movement(current, previous, rank_column="tournament_rank")
-        if len(weeks)>1:
-            from .tournaments import tournament_entries
-            entries = tournament_entries(connection,season_identifier,through_week_number=limit)
-            present = set(entries.loc[entries.week_number.eq(weeks[-1]),"display_name"])
-            prior = set(entries.loc[entries.week_number.eq(weeks[-2]),"display_name"])
-            returning = movement.display_name.isin(present-prior)
-            movement.loc[returning,"previous_rank"] = pd.NA
-            movement.loc[returning,"movement_delta"] = pd.NA
-            movement.loc[returning,"movement_status"] = MOVEMENT_NEW
-        return movement
+        return add_rank_movement(current, previous, rank_column="tournament_rank")
     current_id, previous_id = _current_and_previous_contest_ids(
         connection, season_identifier, through_contest_id
     )
@@ -247,9 +200,7 @@ def tournament_leaderboard_with_movement(
     movement = add_rank_movement(
         current, previous, rank_column="tournament_rank"
     )
-    return _mark_current_returnees_new(
-        connection, movement, current_id, previous_id
-    )
+    return movement
 
 
 def current_last_place_streaks(

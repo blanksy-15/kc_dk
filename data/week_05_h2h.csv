@@ -1,0 +1,64 @@
+Rank,EntryId,EntryName,TimeRemaining,Points,Lineup,,Player,Roster Position,%Drafted,FPTS
+1,5292162316,DCB38,0,161.62,DST Falcons  FLEX Jonathan Taylor QB Matthew Stafford RB Jaylen Warren RB TreVeyon Henderson TE Kenyon Sadiq WR Puka Nacua WR Denzel Boston WR Luther Burden III,,D'Andre Swift,RB,40.00%,17.3
+2,5291764399,ecastillo15,0,154.68,DST Browns  FLEX Aaron Jones Sr. QB Jordan Love RB Kyren Williams RB D'Andre Swift TE T.J. Hockenson WR Malik Nabers WR Jameson Williams WR DK Metcalf,,Puka Nacua,WR,30.00%,40.7
+3,5291779495,slayer44,0,151.26,DST Broncos  FLEX D'Andre Swift QB Jacoby Brissett RB Jahmyr Gibbs RB Braelon Allen TE Mike Gesicki WR Michael Wilson WR Jameson Williams WR Roman Wilson,,Jameson Williams,WR,30.00%,18.7
+4,5291293663,suprman2k2k,0,144.7,DST Chargers  FLEX Rome Odunze QB Josh Allen RB Derrick Henry RB Brian Robinson Jr. TE Brock Bowers WR Puka Nacua WR Tre' Harris WR Rashid Shaheed,,Keon Coleman,WR,30.00%,7.7
+5,5286153508,WayneGod55,0,135.34,DST Vikings  FLEX Amon-Ra St. Brown QB Jared Goff RB D'Andre Swift RB Quinshon Judkins TE Sam LaPorta WR Jameson Williams WR Khalil Shakir WR Keon Coleman,,Brock Bowers,TE,30.00%,27
+6,5286041522,tystrek20,0,129.76,DST Vikings  FLEX George Kittle QB Jacoby Brissett RB Quinshon Judkins RB Keaton Mitchell TE Trey McBride WR Puka Nacua WR Michael Wilson WR Carnell Tate,,Josh Allen,QB,20.00%,34.5
+7,5291229313,christina.webb,0,129.16,DST Bengals  FLEX Brock Bowers QB Brock Purdy RB D'Andre Swift RB RJ Harvey TE Juwan Johnson WR Christian Watson WR Deebo Samuel Sr. WR Denzel Boston,,Jacoby Brissett,QB,20.00%,26.28
+8,5286024182,bschobs,0,105.3,DST Colts  FLEX Amon-Ra St. Brown QB Josh Allen RB Chase Brown RB Emanuel Wilson TE Kenyon Sadiq WR Zay Flowers WR Keon Coleman WR Malik Washington,,Bijan Robinson,RB,20.00%,15.8
+9,5286229620,Mariogamermlg,0,91.12,DST Ravens  FLEX Brock Bowers QB Kirk Cousins RB Bijan Robinson RB RJ Harvey TE George Kittle WR Deebo Samuel Sr. WR Khalil Shakir WR Rome Odunze,,Kyren Williams,RB,20.00%,19.6
+10,5288913960,austin.schober,0,89.3,DST Bears  FLEX Bijan Robinson QB Deshaun Watson RB Kyren Williams RB Emanuel Wilson TE Harold Fannin Jr. WR Tee Higgins WR Terry McLaurin WR Keon Coleman,,Quinshon Judkins,RB,20.00%,8
+,,,,,,,Emanuel Wilson,RB,20.00%,14.2
+,,,,,,,RJ Harvey,RB,20.00%,0.7
+,,,,,,,Amon-Ra St. Brown,FLEX,20.00%,12.9
+,,,,,,,Michael Wilson,WR,20.00%,7.28
+,,,,,,,Deebo Samuel Sr.,WR,20.00%,3.5
+,,,,,,,Denzel Boston,WR,20.00%,13.6
+,,,,,,,Khalil Shakir,WR,20.00%,11
+,,,,,,,Rome Odunze,WR,20.00%,6
+,,,,,,,George Kittle,TE,20.00%,7.4
+,,,,,,,Kenyon Sadiq,TE,20.00%,1.3
+,,,,,,,Vikings,DST,20.00%,11
+,,,,,,,Jared Goff,QB,10.00%,28.94
+,,,,,,,Brock Purdy,QB,10.00%,17.16
+,,,,,,,Matthew Stafford,QB,10.00%,30.32
+,,,,,,,Jordan Love,QB,10.00%,28.28
+,,,,,,,Kirk Cousins,QB,10.00%,13.72
+,,,,,,,Deshaun Watson,QB,10.00%,13.2
+,,,,,,,Jahmyr Gibbs,RB,10.00%,40.7
+,,,,,,,Derrick Henry,RB,10.00%,24
+,,,,,,,Jonathan Taylor,FLEX,10.00%,11.2
+,,,,,,,Chase Brown,RB,10.00%,8
+,,,,,,,Jaylen Warren,RB,10.00%,39.8
+,,,,,,,Aaron Jones Sr.,FLEX,10.00%,22.7
+,,,,,,,Braelon Allen,RB,10.00%,21.6
+,,,,,,,TreVeyon Henderson,RB,10.00%,4.8
+,,,,,,,Brian Robinson Jr.,RB,10.00%,1.6
+,,,,,,,Keaton Mitchell,RB,10.00%,5.9
+,,,,,,,Tee Higgins,WR,10.00%,4.2
+,,,,,,,Zay Flowers,WR,10.00%,14.6
+,,,,,,,Christian Watson,WR,10.00%,35.3
+,,,,,,,Malik Nabers,WR,10.00%,32.1
+,,,,,,,DK Metcalf,WR,10.00%,5.3
+,,,,,,,Terry McLaurin,WR,10.00%,12.2
+,,,,,,,Carnell Tate,WR,10.00%,1.6
+,,,,,,,Luther Burden III,WR,10.00%,8.9
+,,,,,,,Malik Washington,WR,10.00%,12.1
+,,,,,,,Tre' Harris,WR,10.00%,3.6
+,,,,,,,Rashid Shaheed,WR,10.00%,4.3
+,,,,,,,Roman Wilson,WR,10.00%,0
+,,,,,,,Trey McBride,TE,10.00%,21.6
+,,,,,,,Sam LaPorta,TE,10.00%,19.8
+,,,,,,,T.J. Hockenson,TE,10.00%,1.7
+,,,,,,,Juwan Johnson,TE,10.00%,5.6
+,,,,,,,Harold Fannin Jr.,TE,10.00%,1.4
+,,,,,,,Mike Gesicki,TE,10.00%,7.4
+,,,,,,,Bengals,DST,10.00%,9
+,,,,,,,Ravens,DST,10.00%,6
+,,,,,,,Broncos,DST,10.00%,12
+,,,,,,,Bears,DST,10.00%,1
+,,,,,,,Browns,DST,10.00%,9
+,,,,,,,Colts,DST,10.00%,0
+,,,,,,,Falcons,DST,10.00%,11
+,,,,,,,Chargers,DST,10.00%,3

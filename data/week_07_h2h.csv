@@ -1,0 +1,63 @@
+Rank,EntryId,EntryName,TimeRemaining,Points,Lineup,,Player,Roster Position,%Drafted,FPTS
+1,5299046714,austin.schober,0,151.22,DST Panthers  FLEX Christian McCaffrey QB Kirk Cousins RB Kyren Williams RB Rachaad White TE Juwan Johnson WR Christian Watson WR Malik Nabers WR Tre Tucker,,Xavier Worthy,WR,45.45%,14.3
+2,5301298871,slayer44,0,147.5,DST Ravens  FLEX Kyren Williams QB Caleb Williams RB Braelon Allen RB Dameon Pierce TE Isaiah Likely WR Drake London WR Malik Nabers WR Xavier Worthy,,Matthew Stafford,QB,36.36%,16.88
+3,5296292712,hellonheelz,0,139.78,DST Chiefs  FLEX Travis Kelce QB Patrick Mahomes RB Kenneth Walker III RB Roschon Johnson TE Trey McBride WR Khalil Shakir WR Tre Tucker WR Wan'Dale Robinson,,Kyren Williams,RB,36.36%,9.7
+4,5300532933,suprman2k2k,0,125.1,DST Raiders  FLEX George Kittle QB Josh Allen RB Kenneth Walker III RB Kimani Vidal TE Hunter Henry WR Puka Nacua WR Rome Odunze WR Xavier Worthy,,Isaiah Likely,TE,36.36%,23.9
+5,5299054153,christina.webb,0,123.78,DST 49ers  FLEX Rachaad White QB Matthew Stafford RB James Cook III RB Rhamondre Stevenson TE Isaiah Likely WR Davante Adams WR DK Metcalf WR Devaughn Vele,,Kenneth Walker III,RB,27.27%,30.9
+6,5295460780,WayneGod55,0,123.28,DST Colts  FLEX Darren Waller QB Matthew Stafford RB Kenneth Walker III RB Omarion Hampton TE Isaiah Likely WR Puka Nacua WR Khalil Shakir WR Xavier Worthy,,Puka Nacua,WR,27.27%,14
+7,5297065756,tystrek20,0,122.98,DST Bears  FLEX Davante Adams QB Matthew Stafford RB Javonte Williams RB Kyren Williams TE George Kittle WR Matthew Golden WR Luther Burden III WR Cyrus Allen,,Khalil Shakir,WR,27.27%,13.4
+8,5300248642,sesuman,0,118.08,DST Panthers  FLEX KC Concepcion Jr. QB Matthew Stafford RB Bijan Robinson RB Chuba Hubbard TE Isaiah Likely WR Puka Nacua WR Xavier Worthy WR Chris Godwin Jr.,,Tre Tucker,WR,27.27%,26.7
+9,5297675445,Mariogamermlg,0,100.5,DST Giants  FLEX Brock Bowers QB Tyler Huntley RB Jaylen Warren RB Rhamondre Stevenson TE Trey McBride WR Terry McLaurin WR Carnell Tate WR Tre Tucker,,George Kittle,TE,27.27%,17.9
+10,5295352479,ecastillo15,0,100.08,DST Patriots  FLEX Travis Kelce QB Patrick Mahomes RB Chuba Hubbard RB Cam Skattebo TE Juwan Johnson WR Mike Evans WR Matthew Golden WR Khalil Shakir,,Josh Allen,QB,18.18%,18.3
+11,5295337074,bschobs,0,92.7,DST Steelers  FLEX Bijan Robinson QB Josh Allen RB Kyren Williams RB Corey Kiner TE George Kittle WR Devaughn Vele WR Xavier Worthy WR Brandin Cooks,,Patrick Mahomes,QB,18.18%,11.48
+,,,,,,,Bijan Robinson,RB,18.18%,7.3
+,,,,,,,Chuba Hubbard,RB,18.18%,22.1
+,,,,,,,Rhamondre Stevenson,RB,18.18%,3.6
+,,,,,,,Rachaad White,RB,18.18%,15.7
+,,,,,,,Davante Adams,WR,18.18%,6.9
+,,,,,,,Malik Nabers,WR,18.18%,31.5
+,,,,,,,Matthew Golden,WR,18.18%,25.4
+,,,,,,,Devaughn Vele,WR,18.18%,7.2
+,,,,,,,Trey McBride,TE,18.18%,12.3
+,,,,,,,Travis Kelce,FLEX,18.18%,9.3
+,,,,,,,Juwan Johnson,TE,18.18%,0
+,,,,,,,Panthers,DST,18.18%,4
+,,,,,,,Caleb Williams,QB,9.09%,19.5
+,,,,,,,Kirk Cousins,QB,9.09%,22.52
+,,,,,,,Tyler Huntley,QB,9.09%,13.4
+,,,,,,,Christian McCaffrey,FLEX,9.09%,31.7
+,,,,,,,Javonte Williams,RB,9.09%,13
+,,,,,,,James Cook III,RB,9.09%,24.3
+,,,,,,,Jaylen Warren,RB,9.09%,9.8
+,,,,,,,Cam Skattebo,RB,9.09%,0
+,,,,,,,Braelon Allen,RB,9.09%,12.4
+,,,,,,,Omarion Hampton,RB,9.09%,7.9
+,,,,,,,Dameon Pierce,RB,9.09%,15
+,,,,,,,Kimani Vidal,RB,9.09%,7
+,,,,,,,Corey Kiner,RB,9.09%,5.7
+,,,,,,,Roschon Johnson,RB,9.09%,15.5
+,,,,,,,Drake London,WR,9.09%,12.2
+,,,,,,,Christian Watson,WR,9.09%,9.4
+,,,,,,,Mike Evans,WR,9.09%,12.4
+,,,,,,,DK Metcalf,WR,9.09%,20.3
+,,,,,,,Luther Burden III,WR,9.09%,17.5
+,,,,,,,Terry McLaurin,WR,9.09%,3.7
+,,,,,,,Carnell Tate,WR,9.09%,19
+,,,,,,,Rome Odunze,WR,9.09%,6.9
+,,,,,,,Wan'Dale Robinson,WR,9.09%,5.2
+,,,,,,,Chris Godwin Jr.,WR,9.09%,7.7
+,,,,,,,KC Concepcion Jr.,FLEX,9.09%,7.9
+,,,,,,,Brandin Cooks,WR,9.09%,2.3
+,,,,,,,Cyrus Allen,WR,9.09%,4.7
+,,,,,,,Brock Bowers,FLEX,9.09%,11
+,,,,,,,Hunter Henry,TE,9.09%,14.8
+,,,,,,,Darren Waller,FLEX,9.09%,0
+,,,,,,,Chiefs,DST,9.09%,15
+,,,,,,,Patriots,DST,9.09%,6
+,,,,,,,49ers,DST,9.09%,5
+,,,,,,,Colts,DST,9.09%,2
+,,,,,,,Steelers,DST,9.09%,10
+,,,,,,,Ravens,DST,9.09%,9
+,,,,,,,Giants,DST,9.09%,1
+,,,,,,,Bears,DST,9.09%,11
+,,,,,,,Raiders,DST,9.09%,1
