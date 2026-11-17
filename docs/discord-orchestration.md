@@ -90,7 +90,7 @@ for a source message and never costs an OpenAI request.
 The source post is never edited/deleted. `announcement:guild:source_message_id`
 records source ID/channel, type, URL, week, output ID and timestamp. Duplicate
 events or service restarts cannot announce that source again. A new manually
-posted source message is a new announcement even if it repeats a URL.
+pofsted source message is a new announcement even if it repeats a URL.
 
 `general_drunk.announcement_followups` defaults to false. When enabled, one
 optional conversation-only reply can target the Commissioner announcement. It

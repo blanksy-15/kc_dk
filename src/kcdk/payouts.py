@@ -33,7 +33,12 @@ def _money(text: str) -> int:
 def load_payouts(path: str | Path) -> tuple[PayoutTier, ...]:
     """Read normalized tiers or the DK alternating place/amount export."""
     with Path(path).open(encoding="utf-8-sig", newline="") as source:
-        rows = [[cell.strip() for cell in row] for row in csv.reader(source)
+        # DraftKings exports sometimes retain a trailing delimiter, leaving an
+        # otherwise empty second column on alternating place/amount rows.
+        # Ignore only empty cells so normalized three-column schedules remain
+        # structurally strict.
+        rows = [[cell.strip() for cell in row if cell.strip()]
+                for row in csv.reader(source)
                 if row and any(cell.strip() for cell in row)]
     if not rows:
         raise ValueError("Payout schedule is empty")

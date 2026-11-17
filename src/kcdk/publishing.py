@@ -834,6 +834,7 @@ def run_weekly_workflow(
     tournament_payout_path: str | Path | None = None,
     allow_unknown_tournament_payouts: bool = False,
     leaderboard_config: LeaderboardConfig | None = None,
+    commentary: StructuredCommentary | None = None,
 ) -> WeeklyWorkflowResult:
     """Import one CSV, then render or publish the complete weekly package."""
     from .tournaments import import_tournament
@@ -880,6 +881,7 @@ def run_weekly_workflow(
         drunk_bot_config=drunk_bot_config,
         recover_drunk_bot=recover_drunk_bot,
         leaderboard_config=leaderboard_config,
+        commentary=commentary,
     )
     return WeeklyWorkflowResult(summary, publication, tournament_summary)
 

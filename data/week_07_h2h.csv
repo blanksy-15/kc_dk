@@ -1,63 +1,66 @@
 Rank,EntryId,EntryName,TimeRemaining,Points,Lineup,,Player,Roster Position,%Drafted,FPTS
-1,5299046714,austin.schober,0,151.22,DST Panthers  FLEX Christian McCaffrey QB Kirk Cousins RB Kyren Williams RB Rachaad White TE Juwan Johnson WR Christian Watson WR Malik Nabers WR Tre Tucker,,Xavier Worthy,WR,45.45%,14.3
-2,5301298871,slayer44,0,147.5,DST Ravens  FLEX Kyren Williams QB Caleb Williams RB Braelon Allen RB Dameon Pierce TE Isaiah Likely WR Drake London WR Malik Nabers WR Xavier Worthy,,Matthew Stafford,QB,36.36%,16.88
-3,5296292712,hellonheelz,0,139.78,DST Chiefs  FLEX Travis Kelce QB Patrick Mahomes RB Kenneth Walker III RB Roschon Johnson TE Trey McBride WR Khalil Shakir WR Tre Tucker WR Wan'Dale Robinson,,Kyren Williams,RB,36.36%,9.7
-4,5300532933,suprman2k2k,0,125.1,DST Raiders  FLEX George Kittle QB Josh Allen RB Kenneth Walker III RB Kimani Vidal TE Hunter Henry WR Puka Nacua WR Rome Odunze WR Xavier Worthy,,Isaiah Likely,TE,36.36%,23.9
-5,5299054153,christina.webb,0,123.78,DST 49ers  FLEX Rachaad White QB Matthew Stafford RB James Cook III RB Rhamondre Stevenson TE Isaiah Likely WR Davante Adams WR DK Metcalf WR Devaughn Vele,,Kenneth Walker III,RB,27.27%,30.9
-6,5295460780,WayneGod55,0,123.28,DST Colts  FLEX Darren Waller QB Matthew Stafford RB Kenneth Walker III RB Omarion Hampton TE Isaiah Likely WR Puka Nacua WR Khalil Shakir WR Xavier Worthy,,Puka Nacua,WR,27.27%,14
-7,5297065756,tystrek20,0,122.98,DST Bears  FLEX Davante Adams QB Matthew Stafford RB Javonte Williams RB Kyren Williams TE George Kittle WR Matthew Golden WR Luther Burden III WR Cyrus Allen,,Khalil Shakir,WR,27.27%,13.4
-8,5300248642,sesuman,0,118.08,DST Panthers  FLEX KC Concepcion Jr. QB Matthew Stafford RB Bijan Robinson RB Chuba Hubbard TE Isaiah Likely WR Puka Nacua WR Xavier Worthy WR Chris Godwin Jr.,,Tre Tucker,WR,27.27%,26.7
-9,5297675445,Mariogamermlg,0,100.5,DST Giants  FLEX Brock Bowers QB Tyler Huntley RB Jaylen Warren RB Rhamondre Stevenson TE Trey McBride WR Terry McLaurin WR Carnell Tate WR Tre Tucker,,George Kittle,TE,27.27%,17.9
-10,5295352479,ecastillo15,0,100.08,DST Patriots  FLEX Travis Kelce QB Patrick Mahomes RB Chuba Hubbard RB Cam Skattebo TE Juwan Johnson WR Mike Evans WR Matthew Golden WR Khalil Shakir,,Josh Allen,QB,18.18%,18.3
-11,5295337074,bschobs,0,92.7,DST Steelers  FLEX Bijan Robinson QB Josh Allen RB Kyren Williams RB Corey Kiner TE George Kittle WR Devaughn Vele WR Xavier Worthy WR Brandin Cooks,,Patrick Mahomes,QB,18.18%,11.48
-,,,,,,,Bijan Robinson,RB,18.18%,7.3
-,,,,,,,Chuba Hubbard,RB,18.18%,22.1
-,,,,,,,Rhamondre Stevenson,RB,18.18%,3.6
-,,,,,,,Rachaad White,RB,18.18%,15.7
-,,,,,,,Davante Adams,WR,18.18%,6.9
-,,,,,,,Malik Nabers,WR,18.18%,31.5
-,,,,,,,Matthew Golden,WR,18.18%,25.4
-,,,,,,,Devaughn Vele,WR,18.18%,7.2
-,,,,,,,Trey McBride,TE,18.18%,12.3
-,,,,,,,Travis Kelce,FLEX,18.18%,9.3
-,,,,,,,Juwan Johnson,TE,18.18%,0
-,,,,,,,Panthers,DST,18.18%,4
-,,,,,,,Caleb Williams,QB,9.09%,19.5
-,,,,,,,Kirk Cousins,QB,9.09%,22.52
-,,,,,,,Tyler Huntley,QB,9.09%,13.4
-,,,,,,,Christian McCaffrey,FLEX,9.09%,31.7
-,,,,,,,Javonte Williams,RB,9.09%,13
-,,,,,,,James Cook III,RB,9.09%,24.3
-,,,,,,,Jaylen Warren,RB,9.09%,9.8
-,,,,,,,Cam Skattebo,RB,9.09%,0
-,,,,,,,Braelon Allen,RB,9.09%,12.4
-,,,,,,,Omarion Hampton,RB,9.09%,7.9
-,,,,,,,Dameon Pierce,RB,9.09%,15
-,,,,,,,Kimani Vidal,RB,9.09%,7
-,,,,,,,Corey Kiner,RB,9.09%,5.7
-,,,,,,,Roschon Johnson,RB,9.09%,15.5
-,,,,,,,Drake London,WR,9.09%,12.2
-,,,,,,,Christian Watson,WR,9.09%,9.4
-,,,,,,,Mike Evans,WR,9.09%,12.4
-,,,,,,,DK Metcalf,WR,9.09%,20.3
-,,,,,,,Luther Burden III,WR,9.09%,17.5
-,,,,,,,Terry McLaurin,WR,9.09%,3.7
-,,,,,,,Carnell Tate,WR,9.09%,19
-,,,,,,,Rome Odunze,WR,9.09%,6.9
-,,,,,,,Wan'Dale Robinson,WR,9.09%,5.2
-,,,,,,,Chris Godwin Jr.,WR,9.09%,7.7
-,,,,,,,KC Concepcion Jr.,FLEX,9.09%,7.9
-,,,,,,,Brandin Cooks,WR,9.09%,2.3
-,,,,,,,Cyrus Allen,WR,9.09%,4.7
-,,,,,,,Brock Bowers,FLEX,9.09%,11
-,,,,,,,Hunter Henry,TE,9.09%,14.8
-,,,,,,,Darren Waller,FLEX,9.09%,0
-,,,,,,,Chiefs,DST,9.09%,15
-,,,,,,,Patriots,DST,9.09%,6
-,,,,,,,49ers,DST,9.09%,5
-,,,,,,,Colts,DST,9.09%,2
-,,,,,,,Steelers,DST,9.09%,10
-,,,,,,,Ravens,DST,9.09%,9
-,,,,,,,Giants,DST,9.09%,1
-,,,,,,,Bears,DST,9.09%,11
-,,,,,,,Raiders,DST,9.09%,1
+1,5311683475,slayer44,0,141.82,DST Browns  FLEX Quinshon Judkins QB Jared Goff RB Jahmyr Gibbs RB Bucky Irving TE Kyle Pitts Sr. WR Jameson Williams WR Josh Downs WR Troy Franklin,,Matthew Golden,WR,53.85%,9.9
+2,5310497304,Mariogamermlg,0,134.12,DST Chiefs  FLEX Chuba Hubbard QB Tyler Huntley RB Kenneth Walker III RB Tyrone Tracy Jr. TE Tommy Tremble WR Zay Flowers WR Tee Higgins WR Tre Tucker,,Jordan Love,QB,46.15%,17.96
+3,5305201943,WayneGod55,0,127.1,DST Jets  FLEX George Kittle QB Matthew Stafford RB Bucky Irving RB Braelon Allen TE Sam LaPorta WR Nico Collins WR Jameson Williams WR Carnell Tate,,Jahmyr Gibbs,RB,38.46%,21.3
+4,5311654346,christina.webb,0,126.62,DST Seahawks  FLEX Zay Flowers QB Bryce Young RB Woody Marks RB Quinshon Judkins TE Sam LaPorta WR Tetairoa McMillan WR Matthew Golden WR Tre Tucker,,Kenneth Walker III,RB,30.77%,9.7
+5,5309311623,austin.schober,0,126.06,DST Browns  FLEX Kenneth Walker III QB Jordan Love RB Christian McCaffrey RB Cam Skattebo TE Dallas Goedert WR Matthew Golden WR Xavier Worthy WR Omar Cooper Jr.,,Bryce Young,QB,23.08%,8.42
+6,5311076967,sesuman,0,115.96,DST Titans  FLEX Ted Hurst III QB Jordan Love RB Bijan Robinson RB Christian McCaffrey TE George Kittle WR Jalen Coker WR Matthew Golden WR KC Concepcion Jr.,,Christian McCaffrey,RB,23.08%,22
+7,5311898477,hellonheelz,0,114.26,DST Chiefs  FLEX Michael Mayer QB Jordan Love RB Kenneth Walker III RB Emanuel Wilson TE Travis Kelce WR Ja'Marr Chase WR Xavier Worthy WR KC Concepcion Jr.,,Quinshon Judkins,RB,23.08%,23.4
+8,5305197497,bschobs,0,110.22,DST Cardinals  FLEX George Pickens QB Jared Goff RB Jahmyr Gibbs RB Emmett Johnson TE Dallas Goedert WR Matthew Golden WR Jameson Williams WR Jaylin Noel,,Jameson Williams,WR,23.08%,26.1
+9,5311740387,ecastillo15,0,101.82,DST Jets  FLEX Kyren Williams QB Bryce Young RB Braelon Allen RB Quinshon Judkins TE Jake Ferguson WR George Pickens WR Jalen Coker WR Matthew Golden,,Xavier Worthy,WR,23.08%,4.1
+10,5311960680,Deleshaun,0,101.62,DST Texans  FLEX Rashid Shaheed QB Bryce Young RB Bijan Robinson RB Christian McCaffrey TE Mark Andrews WR Amon-Ra St. Brown WR Carnell Tate WR Tank Dell,,Carnell Tate,WR,23.08%,10.9
+11,5306274401,tystrek20,0,90.76,DST Jets  FLEX Carnell Tate QB Jordan Love RB Jahmyr Gibbs RB Woody Marks TE Tyler Higbee WR Ja'Marr Chase WR Matthew Golden WR Ted Hurst III,,Jets,DST,23.08%,1
+12,5311021098,suprman2k2k,0,90.46,DST Cardinals  FLEX Xavier Worthy QB Jordan Love RB Jahmyr Gibbs RB Ollie Gordon II TE Kenyon Sadiq WR Christian Watson WR Jaylen Waddle WR Denzel Boston,,Jared Goff,QB,15.38%,22.02
+13,5311387737,beantowncat22,0,82.96,DST Bengals  FLEX Foster Moreau QB Jordan Love RB Jahmyr Gibbs RB Kenneth Walker III TE Tyler Higbee WR Christian Watson WR Matthew Golden WR Christian Kirk,,Bijan Robinson,RB,15.38%,17.2
+,,,,,,,Bucky Irving,RB,15.38%,27
+,,,,,,,Braelon Allen,RB,15.38%,22.4
+,,,,,,,Woody Marks,RB,15.38%,9.1
+,,,,,,,Ja'Marr Chase,WR,15.38%,17.2
+,,,,,,,Christian Watson,WR,15.38%,10.7
+,,,,,,,Zay Flowers,WR,15.38%,30.7
+,,,,,,,George Pickens,WR,15.38%,15.7
+,,,,,,,Jalen Coker,WR,15.38%,1.9
+,,,,,,,Tre Tucker,WR,15.38%,24.3
+,,,,,,,KC Concepcion Jr.,WR,15.38%,26.2
+,,,,,,,Ted Hurst III,WR,15.38%,0
+,,,,,,,George Kittle,TE,15.38%,15.8
+,,,,,,,Sam LaPorta,TE,15.38%,2.8
+,,,,,,,Dallas Goedert,TE,15.38%,9.8
+,,,,,,,Tyler Higbee,TE,15.38%,3.4
+,,,,,,,Chiefs,DST,15.38%,3
+,,,,,,,Browns,DST,15.38%,5
+,,,,,,,Cardinals,DST,15.38%,0
+,,,,,,,Matthew Stafford,QB,7.69%,18.5
+,,,,,,,Tyler Huntley,QB,7.69%,16.12
+,,,,,,,Kyren Williams,FLEX,7.69%,19.1
+,,,,,,,Chuba Hubbard,FLEX,7.69%,10
+,,,,,,,Ollie Gordon II,RB,7.69%,20.3
+,,,,,,,Emanuel Wilson,RB,7.69%,21.5
+,,,,,,,Cam Skattebo,RB,7.69%,22.1
+,,,,,,,Tyrone Tracy Jr.,RB,7.69%,8.7
+,,,,,,,Emmett Johnson,RB,7.69%,3.7
+,,,,,,,Amon-Ra St. Brown,WR,7.69%,27.2
+,,,,,,,Nico Collins,WR,7.69%,2.6
+,,,,,,,Tetairoa McMillan,WR,7.69%,8
+,,,,,,,Tee Higgins,WR,7.69%,29.8
+,,,,,,,Josh Downs,WR,7.69%,3.8
+,,,,,,,Jaylen Waddle,WR,7.69%,8.8
+,,,,,,,Denzel Boston,WR,7.69%,5.7
+,,,,,,,Rashid Shaheed,FLEX,7.69%,2.1
+,,,,,,,Omar Cooper Jr.,WR,7.69%,25.5
+,,,,,,,Jaylin Noel,WR,7.69%,1.7
+,,,,,,,Christian Kirk,WR,7.69%,0
+,,,,,,,Tank Dell,WR,7.69%,5.5
+,,,,,,,Troy Franklin,WR,7.69%,0
+,,,,,,,Travis Kelce,TE,7.69%,8.4
+,,,,,,,Jake Ferguson,TE,7.69%,0
+,,,,,,,Kyle Pitts Sr.,TE,7.69%,13.2
+,,,,,,,Mark Andrews,TE,7.69%,5.3
+,,,,,,,Michael Mayer,FLEX,7.69%,6.2
+,,,,,,,Kenyon Sadiq,TE,7.69%,1.6
+,,,,,,,Tommy Tremble,TE,7.69%,1.8
+,,,,,,,Foster Moreau,FLEX,7.69%,0
+,,,,,,,Texans,DST,7.69%,3
+,,,,,,,Seahawks,DST,7.69%,10
+,,,,,,,Titans,DST,7.69%,5
+,,,,,,,Bengals,DST,7.69%,10
